@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@pegma/authorization-contracts": "0.0.0",
-    "@pegma/storage-core": "0.1.1"
+    "@pegma/storage-core": "0.2.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
