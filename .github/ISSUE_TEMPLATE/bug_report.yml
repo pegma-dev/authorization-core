@@ -1,0 +1,64 @@
+name: Bug report
+description: Report incorrect behavior or a regression
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Authorization Core. Do not report security
+        vulnerabilities here; use private vulnerability reporting instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest subject, policy, and code sample that reproduces the behavior.
+      render: typescript
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Authorization Core version or commit
+      placeholder: 0.1.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      placeholder: Node.js 22 on Windows, Linux, or macOS
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Authorization impact
+      description: Could this incorrectly grant or deny access?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same behavior.
+          required: true
+        - label: This report does not contain secrets or customer data.
+          required: true
+        - label: This is not a privately reportable security vulnerability.
+          required: true

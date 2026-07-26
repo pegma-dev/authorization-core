@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@pegma/authorization-auth0": ["./packages/auth0/src/index.ts"],
+      "@pegma/authorization-azure-tables": [
+        "./packages/azure-tables/src/index.ts"
+      ],
+      "@pegma/authorization-contracts": ["./packages/contracts/src/index.ts"],
+      "@pegma/authorization-core": ["./packages/core/src/index.ts"],
+      "@pegma/authorization-storage": ["./packages/storage/src/index.ts"],
+      "@pegma/authorization-stripe": ["./packages/stripe/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["packages/**/dist/**", "packages/**/node_modules/**"]
+}

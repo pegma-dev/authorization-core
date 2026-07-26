@@ -1,0 +1,29 @@
+{
+  "name": "authorization-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Provider-neutral roles, entitlements, and permissions for SaaS applications.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "check": "tsc -p tsconfig.check.json --pretty false",
+    "clean": "tsc -b --clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "fast-check": "^4.9.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "_fixture": {
+    "capturedAt": "2026-07-25",
+    "sanitized": true,
+    "sources": [
+      "https://auth0.com/docs/secure/tokens/access-tokens/access-token-profiles",
+      "https://auth0.com/docs/manage-users/organizations/using-tokens"
+    ],
+    "notes": "Synthetic test-only values shaped from the documented Auth0 and RFC 9068 access-token profiles. No encoded token, signature, secret, live tenant, or live user data is included."
+  },
+  "auth0Profile": {
+    "iss": "https://fixture-tenant.example.auth0.com/",
+    "sub": "auth0|fixture-user-0001",
+    "aud": "https://api.fixture.example/",
+    "iat": 1784970000,
+    "exp": 1784973600,
+    "scope": "openid profile read:account",
+    "azp": "fixture_client_auth0_profile",
+    "permissions": ["read:account", "admin:provider-only"],
+    "org_id": "org_fixture_primary",
+    "org_name": "fixture-primary",
+    "https://claims.fixture.example/roles": [
+      "organization-owner",
+      "provider-support"
+    ]
+  },
+  "rfc9068Profile": {
+    "iss": "https://fixture-tenant.example.auth0.com/",
+    "sub": "auth0|fixture-user-0002",
+    "aud": ["https://api.fixture.example/"],
+    "iat": 1784970000,
+    "exp": 1784973600,
+    "jti": "fixture-jti-rfc9068-0001",
+    "client_id": "fixture_client_rfc9068_profile",
+    "scope": "openid profile read:account",
+    "permissions": ["read:account", "admin:provider-only"],
+    "org_id": "org_fixture_secondary",
+    "org_name": "fixture-secondary",
+    "https://claims.fixture.example/roles": ["organization-administrator"]
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "_fixture": {
+    "capturedAt": "2026-07-25",
+    "sanitized": true,
+    "sources": [
+      "https://docs.stripe.com/api/entitlements/active-entitlement/list",
+      "https://docs.stripe.com/api/entitlements/active-entitlement/object",
+      "https://docs.stripe.com/billing/entitlements"
+    ],
+    "notes": "Synthetic test-mode identifiers shaped from Stripe's documented full active-entitlement list. Two pages make truncated summary or first-page-only projection observable. No API key, webhook secret, live customer, or live entitlement data is included."
+  },
+  "customer": "cus_fixture_account_0001",
+  "webhookTrigger": {
+    "id": "evt_fixture_entitlements_updated_0001",
+    "object": "event",
+    "created": 1799999000,
+    "type": "entitlements.active_entitlement_summary.updated",
+    "data": {
+      "object": {
+        "object": "entitlements.active_entitlement_summary",
+        "customer": "cus_fixture_account_0001",
+        "entitlements": {
+          "object": "list",
+          "data": [
+            {
+              "id": "ent_test_fixture_priority_0001",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_priority_0001",
+              "lookup_key": "priority-support",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0002",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0002",
+              "lookup_key": "provider-only-unmapped-02",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0003",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0003",
+              "lookup_key": "provider-only-unmapped-03",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0004",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0004",
+              "lookup_key": "provider-only-unmapped-04",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0005",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0005",
+              "lookup_key": "provider-only-unmapped-05",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0006",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0006",
+              "lookup_key": "provider-only-unmapped-06",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0007",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0007",
+              "lookup_key": "provider-only-unmapped-07",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0008",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0008",
+              "lookup_key": "provider-only-unmapped-08",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0009",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0009",
+              "lookup_key": "provider-only-unmapped-09",
+              "livemode": false
+            },
+            {
+              "id": "ent_test_fixture_unmapped_0010",
+              "object": "entitlements.active_entitlement",
+              "feature": "feat_test_fixture_unmapped_0010",
+              "lookup_key": "provider-only-unmapped-10",
+              "livemode": false
+            }
+          ],
+          "has_more": true,
+          "url": "/v1/customer/cus_fixture_account_0001/entitlements"
+        }
+      }
+    }
+  },
+  "pages": [
+    {
+      "request": {
+        "customer": "cus_fixture_account_0001",
+        "starting_after": null
+      },
+      "response": {
+        "object": "list",
+        "url": "/v1/entitlements/active_entitlements",
+        "has_more": true,
+        "data": [
+          {
+            "id": "ent_test_fixture_priority_0001",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_priority_0001",
+            "lookup_key": "priority-support",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0002",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0002",
+            "lookup_key": "provider-only-unmapped-02",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0003",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0003",
+            "lookup_key": "provider-only-unmapped-03",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0004",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0004",
+            "lookup_key": "provider-only-unmapped-04",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0005",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0005",
+            "lookup_key": "provider-only-unmapped-05",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0006",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0006",
+            "lookup_key": "provider-only-unmapped-06",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0007",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0007",
+            "lookup_key": "provider-only-unmapped-07",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0008",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0008",
+            "lookup_key": "provider-only-unmapped-08",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0009",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0009",
+            "lookup_key": "provider-only-unmapped-09",
+            "livemode": false
+          },
+          {
+            "id": "ent_test_fixture_unmapped_0010",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_unmapped_0010",
+            "lookup_key": "provider-only-unmapped-10",
+            "livemode": false
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "customer": "cus_fixture_account_0001",
+        "starting_after": "ent_test_fixture_unmapped_0010"
+      },
+      "response": {
+        "object": "list",
+        "url": "/v1/entitlements/active_entitlements",
+        "has_more": false,
+        "data": [
+          {
+            "id": "ent_test_fixture_reports_0011",
+            "object": "entitlements.active_entitlement",
+            "feature": "feat_test_fixture_reports_0011",
+            "lookup_key": "advanced-reports",
+            "livemode": false
+          }
+        ]
+      }
+    }
+  ]
+}

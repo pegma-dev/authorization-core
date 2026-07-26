@@ -1,0 +1,37 @@
+{
+  "name": "@pegma/authorization-core",
+  "version": "0.0.0",
+  "description": "Pure role and entitlement permission resolution for Authorization Core.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/*.js",
+    "dist/**/*.js.map"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pegma-dev/authorization-core.git",
+    "directory": "packages/core"
+  },
+  "dependencies": {
+    "@pegma/authorization-contracts": "0.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

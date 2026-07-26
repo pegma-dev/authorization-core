@@ -1,0 +1,36 @@
+{
+  "_fixture": {
+    "capturedAt": "2026-07-25",
+    "sanitized": true,
+    "sources": ["https://docs.stripe.com/api/prices/object"],
+    "notes": "Synthetic test-mode recurring Price shaped from Stripe's documented Price object. No API key, live product, live price, or customer data is included."
+  },
+  "price": {
+    "id": "price_fixture_advisor_monthly_0001",
+    "object": "price",
+    "active": true,
+    "billing_scheme": "per_unit",
+    "created": 1799900000,
+    "currency": "usd",
+    "custom_unit_amount": null,
+    "livemode": false,
+    "lookup_key": "advisor-monthly",
+    "metadata": {
+      "fixture": "sanitized"
+    },
+    "nickname": "Fixture Advisor Monthly",
+    "product": "prod_fixture_advisor_0001",
+    "recurring": {
+      "interval": "month",
+      "interval_count": 1,
+      "trial_period_days": null,
+      "usage_type": "licensed"
+    },
+    "tax_behavior": "unspecified",
+    "tiers_mode": null,
+    "transform_quantity": null,
+    "type": "recurring",
+    "unit_amount": 2900,
+    "unit_amount_decimal": "2900"
+  }
+}

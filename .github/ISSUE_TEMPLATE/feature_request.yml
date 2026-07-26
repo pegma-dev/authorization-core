@@ -1,0 +1,60 @@
+name: Feature request
+description: Propose a provider-neutral capability or adapter
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What authorization or integration problem needs to be solved?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core contracts
+        - Policy resolution
+        - Identity adapter
+        - Billing adapter
+        - Storage adapter
+        - Signed access grants
+        - Documentation or examples
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the behavior and public contract, not only a vendor API.
+    validations:
+      required: true
+
+  - type: textarea
+    id: trust
+    attributes:
+      label: Trust boundary and compatibility
+      description: What data is trusted, and could this affect existing policies or adapters?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the project plan.
+          required: true
+        - label: This request does not depend on RetireGolden-specific behavior being built into the core.
+          required: true
