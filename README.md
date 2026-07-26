@@ -40,18 +40,18 @@ Application roles ──┘
 
 ## Current packages
 
-| Package                             | Purpose                                           |
-| ----------------------------------- | ------------------------------------------------- |
-| `@pegma/authorization-contracts`    | Provider-neutral access and policy types          |
-| `@pegma/authorization-core`         | Pure permission resolution and access decisions   |
-| `@pegma/authorization-policy`       | Policy parsing, validation, and diagnostics       |
-| `@pegma/authorization-auth0`        | Verified Auth0 claims to identity-link keys       |
-| `@pegma/authorization-stripe`       | Trusted Stripe IDs to active entitlements         |
-| `@pegma/authorization-storage`      | Persistence ports and in-memory reference adapter |
-| `@pegma/authorization-azure-tables` | Durable Azure Table Storage adapter               |
+| Package                          | Purpose                                         |
+| -------------------------------- | ----------------------------------------------- |
+| `@pegma/authorization-contracts` | Provider-neutral access and policy types        |
+| `@pegma/authorization-core`      | Pure permission resolution and access decisions |
+| `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics     |
+| `@pegma/authorization-auth0`     | Verified Auth0 claims to identity-link keys     |
+| `@pegma/authorization-stripe`    | Trusted Stripe IDs to active entitlements       |
+| `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core`    |
 
-The Azure adapter closes the assignment-and-audit transaction boundary in one
-application-bound Table Storage partition. Signed-token adapters remain
+Storage declares its collections against a `@pegma/storage-core` `Store`, so
+the assignment-and-audit transaction boundary closes in one single-partition
+transaction on whatever backend the host supplies. Signed-token adapters remain
 planned and are not stubbed before their contracts are validated.
 
 ## Example
@@ -257,17 +257,15 @@ resumable removal of bootstrap authority and temporary credentials before the
 gate becomes terminal. It is never a signup, login, invitation, browser,
 first-user, or provider-role flow. The types-first
 [storage package](docs/STORAGE.md) defines exact principal lookup, atomic
-role-lifecycle persistence, append-only role audit ports, and an ephemeral
-in-memory reference adapter. One store instance belongs to one host
-application; a shared backend binds that
-application partition at construction instead of accepting it as query input.
-The low-level role mutation and audit append ports remain separate, non-atomic
-contracts. Both bundled adapters expose only combined audited mutations. The
-in-memory adapter commits them within one process and is non-durable. The Azure
-adapter uses one entity-group transaction in a construction-bound application
-partition, with exact hashed key bindings and retained tuple tombstones. See
-the [Azure Table Storage guide](docs/AZURE_TABLES.md) for provisioning,
-consistency, throughput, and operational limits.
+role-lifecycle persistence, append-only role audit ports, and one
+implementation of them over a `@pegma/storage-core` `Store`. One store instance
+belongs to one host application; a shared backend binds that application
+partition at construction instead of accepting it as query input. The low-level
+role mutation and audit append ports remain separate, non-atomic contracts,
+while `createRoleStore` exposes only combined audited mutations and settles
+each one in a single-partition transaction. `createInMemoryStorageAdapter` is
+that same implementation over the in-process memory store, so it is ephemeral
+and non-durable but enforces the same key and concurrency rules.
 
 Validate application-owned policy during startup and stop boot when
 `parsePolicy` reports an error. See the [policy guide](docs/POLICY.md) for the

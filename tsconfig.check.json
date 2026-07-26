@@ -8,9 +8,6 @@
     "types": ["node"],
     "paths": {
       "@pegma/authorization-auth0": ["./packages/auth0/src/index.ts"],
-      "@pegma/authorization-azure-tables": [
-        "./packages/azure-tables/src/index.ts"
-      ],
       "@pegma/authorization-contracts": ["./packages/contracts/src/index.ts"],
       "@pegma/authorization-core": ["./packages/core/src/index.ts"],
       "@pegma/authorization-storage": ["./packages/storage/src/index.ts"],
