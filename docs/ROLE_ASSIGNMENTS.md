@@ -7,12 +7,11 @@ facts, not identity-provider claims, billing-provider attributes, or policy.
 `@pegma/authorization-contracts` defines the immutable record shape. It deliberately
 does not define mutation services, runtime parsers, or cache behavior.
 `@pegma/authorization-storage` separately defines persistence ports for this lifecycle
-and its role-specific audit events, plus an ephemeral in-memory reference
-adapter. `@pegma/authorization-azure-tables` provides the durable Azure implementation.
-Both bundled adapters expose safe public mutations that atomically update the
-role and derived audit history. See [the storage guide](STORAGE.md) and
-[Azure Table Storage guide](AZURE_TABLES.md) for read, concurrency,
-application-partition, and atomicity semantics.
+and its role-specific audit events, and implements them over a
+`@pegma/storage-core` `Store`; the in-memory store is the ephemeral reference
+backend. The public surface exposes only safe mutations that atomically update
+the role and its derived audit history. See [the storage guide](STORAGE.md) for
+read, concurrency, application-partition, and atomicity semantics.
 
 ## Record model
 

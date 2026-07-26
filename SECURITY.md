@@ -130,23 +130,21 @@ such confinement.
 The `@pegma/authorization-storage` in-memory adapter is a reference implementation for
 tests, examples, and contract evaluation. Its identity links are read-only
 construction seeds, and its public surface omits raw role and audit write
-methods so a role mutation and its derived audit event settle together. Its
-copy-on-write commit linearizes calls only inside one adapter instance. It is
+methods so a role mutation and its derived audit event settle together. It is
 ephemeral, single-process, non-durable, and unsuitable as a production role or
 audit store. Do not infer cross-process transaction safety, restart recovery,
 retention, tamper evidence, or durable audit completeness from its behavior.
 
-The `@pegma/authorization-azure-tables` adapter is durable only when its supplied
-`TableClient` targets a provisioned Azure Table primary endpoint with the
-deployment's intended durability, access control, backup, retention, and
-monitoring. One adapter instance binds one exact application ID, and all
-authorization rows for that application intentionally share one partition so
-an assignment, active-tuple guard, and derived audit event can commit in one
-entity-group transaction. Do not shard those rows, split role and audit data
-across tables, use a secondary read endpoint, or expose raw writes around the
-adapter; each change weakens or removes the documented atomicity and freshness
-properties. Treat table credentials and identity-link row creation as
-privileged host administration.
+`createRoleStore` is durable only when the `@pegma/storage-core` `Store` behind
+it is, with the deployment's intended durability, access control, backup,
+retention, and monitoring. One store instance binds one exact application ID,
+and an assignment, its active-tuple guard, and its derived audit position
+intentionally share one partition so they commit in one transaction. Do not
+shard those records across partitions or collections, read from a
+non-authoritative replica, or expose raw writes around the store; each change
+weakens or removes the documented atomicity and freshness properties. Treat
+backend credentials and identity-link record creation as privileged host
+administration.
 
 Administrator bootstrap is privileged host deployment administration, not an
 identity or storage inference. The coordinator may call only

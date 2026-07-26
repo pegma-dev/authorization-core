@@ -14,10 +14,11 @@ scope through Phase 3. On 2026-07-26 it moved into the Pegma component
 ecosystem as Authorization Core, publishing under `@pegma`. The git history
 begins at that move, and nothing was ever published under the former name.
 
-**Storage:** `@pegma/authorization-storage` and
-`@pegma/authorization-azure-tables` predate `@pegma/storage-core` and duplicate
-what it provides. They are provisional and are to be replaced by collections
-declared against the shared storage port. Do not extend them.
+**Storage:** `@pegma/authorization-storage` declares its collections against
+`@pegma/storage-core`. The bespoke persistence layer and the
+`@pegma/authorization-azure-tables` package that predated the shared storage
+port were removed on 2026-07-26; a durable deployment now supplies a `Store`
+rather than another adapter package here.
 
 Authorization Core will begin as an embedded TypeScript library. A separately deployed
 authorization service may be added after multiple applications need a shared
@@ -190,16 +191,15 @@ authorization.
 
 The repository will stay a monorepo while the public contracts mature.
 
-| Package                             | Responsibility                              | Earliest phase |
-| ----------------------------------- | ------------------------------------------- | -------------- |
-| `@pegma/authorization-contracts`    | Shared domain and adapter contracts         | Foundation     |
-| `@pegma/authorization-core`         | Pure resolution and access decisions        | Foundation     |
-| `@pegma/authorization-policy`       | Policy parsing, validation, and diagnostics | Phase 1        |
-| `@pegma/authorization-auth0`        | Verified Auth0 `iss`/`sub` to identity key  | Phase 2        |
-| `@pegma/authorization-stripe`       | Stripe state to active entitlements         | Phase 2        |
-| `@pegma/authorization-storage`      | Persistence ports and memory reference      | Phase 3        |
-| `@pegma/authorization-azure-tables` | Azure Table Storage adapter                 | Phase 3        |
-| `@pegma/authorization-tokens`       | Short-lived signed access grants and JWKS   | Phase 4        |
+| Package                          | Responsibility                               | Earliest phase |
+| -------------------------------- | -------------------------------------------- | -------------- |
+| `@pegma/authorization-contracts` | Shared domain and adapter contracts          | Foundation     |
+| `@pegma/authorization-core`      | Pure resolution and access decisions         | Foundation     |
+| `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics  | Phase 1        |
+| `@pegma/authorization-auth0`     | Verified Auth0 `iss`/`sub` to identity key   | Phase 2        |
+| `@pegma/authorization-stripe`    | Stripe state to active entitlements          | Phase 2        |
+| `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core` | Phase 3        |
+| `@pegma/authorization-tokens`    | Short-lived signed access grants and JWKS    | Phase 4        |
 
 Packages should be created only when implementation begins. Empty adapter
 packages make compatibility promises without supplying value.
@@ -385,7 +385,8 @@ permissions while retaining its existing Auth0 session and Stripe ledger.
 - [x] Define storage ports for principal lookup, role assignment, and append-only
       audit events.
 - [x] Provide an in-memory reference adapter.
-- [x] Provide an Azure Table Storage adapter.
+- [x] Implement those ports once against `@pegma/storage-core`, so the backend
+      is the host's choice.
 - [x] Add an administrator bootstrap procedure that does not depend on signup
       claims.
 - [x] Define fast role-revocation behavior and cache limits with concrete numeric
@@ -454,61 +455,42 @@ application partition at construction, never from caller query input.
 Role mutation and audit append remain separate low-level port calls and do not
 guarantee an atomic audited operation.
 
-**In-memory reference boundary (2026-07-25):** `@pegma/authorization-storage` now
-provides an isolated, closure-backed in-memory adapter for tests, examples, and
-contract evaluation. Its public factory surface exposes exact read-only
-identity, role, and audit operations plus combined audited grant and revoke
-commands; it deliberately does not expose the raw role or audit writes.
-Caller-selected exact audit event IDs are the only audit input. The adapter
-derives complete audit payloads from immutable role evidence, enforces
-role-side then audit-side conflict precedence, and publishes each role change
-with its corresponding event through one synchronous copy-on-write commit.
-Exact replay is idempotent, conflicts and preparation exceptions do not consume
-tokens or sequences, and a revoked lifecycle cannot be reactivated.
+**Storage-core boundary (2026-07-26):** `@pegma/authorization-storage` declares
+three collections against a `@pegma/storage-core` `Store` and binds them to one
+host application with `createRoleStore`. Assignment, tuple guard, and audit
+positions share one partition per principal and scope, so each audited grant or
+revoke settles in one single-partition transaction — the guarantee every
+backend worth targeting actually offers. A separate immutable pointer
+collection resolves an assignment ID to its partition, and a pointer that
+resolves to nothing reads as definitive absence. Audit payloads are derived
+from the assignment record rather than stored again, so history cannot disagree
+with the lifecycle it describes.
 
-Identity links are optional read-only construction seeds. Inputs and outputs
-are detached and recursively frozen, exact IDs are delimiter- and
-prototype-safe, and instances have independent application namespaces. The
-adapter validates lifecycle timestamps as non-negative safe integers and
-rejects revocation before grant, but it is not a general runtime parser.
-`Promise.all` tests prove synchronous linearization within one adapter instance
-only. This adapter is ephemeral, non-durable, single-process, and not a
-production audit store; durable backends must provide a transaction,
-transactional outbox, or equivalent guarantee. That slice added no Azure
-adapter, identity mutation, organization membership, bootstrap, cache limit,
-provider, core, or policy behavior. See [the storage guide](STORAGE.md).
+The public factory surface exposes exact read-only identity, role, and audit
+operations plus combined audited grant and revoke commands; it deliberately
+does not expose the raw role or audit writes. Caller-selected exact audit event
+IDs are the only audit input. Exact replay is idempotent, a revoked lifecycle
+cannot be reactivated, and a refused transaction is re-read rather than trusted
+to name which precondition it refused. Lifecycle timestamps are validated as
+non-negative safe integers with revocation no earlier than grant, but this is
+not a general runtime parser.
 
-**Azure Table Storage boundary (2026-07-25):**
-`@pegma/authorization-azure-tables` accepts a host-provisioned primary-endpoint
-`TableClient` and binds one exact application ID at construction. Assignment,
-active-tuple, active-selection, per-principal/scope selection-fence,
-audit-history, and application-wide event-ID guard rows share one application
-partition, allowing each audited grant or revoke to settle in one entity-group
-transaction. The fence maintains an exact active count and changes ETag in the
-same transaction. The safe factory exposes only read operations and combined
-audited mutations. It does not expose raw role or audit writes, create tables,
-acquire credentials, or own identity-link administration.
+`listActiveRoleAssignments` is a non-snapshot read of the authoritative
+assignment records: there is no derived selection index and therefore nothing
+that can drift, but a partition listing that begins before a revocation may
+still observe the assignment as active. The host's cache generation fence
+([Fast role revocation and cache bounds](ROLE_REVOCATION.md)) is therefore
+load-bearing rather than belt-and-braces — without it an in-flight read can
+refill a cache after eviction.
 
-Caller-controlled strings are length-framed and SHA-256 hashed into bounded
-Azure-safe keys. Every row also retains exact source values; digest collisions,
-wrong application bindings, malformed lifecycle data, missing guards, orphan
-indexes, and partial histories reject rather than becoming absence or access.
-Assignment ETags are opaque concurrency tokens. Revocation conditionally
-replaces both the assignment and its tuple guard, retaining a tombstone and the
-original pre-revocation token for exact replay. The adapter fully consumes
-paged reads, returns detached frozen records, and reconciles ambiguous
-transaction responses only when the complete exact state is visible.
-
-One application partition is a deliberate correctness and throughput tradeoff,
-not a general high-scale control-plane design. Azure multi-page queries are not
-service-snapshot-isolated, so the adapter reads the selection fence before and
-after full enumeration and retries or rejects on change; the stable active
-count detects omitted or orphaned selections. Secondary-region stale reads are
-unsupported for authorization, and live Azure service validation remains a
-deployment responsibility. This slice adds no table provisioning, identity
-mutation, administrator bootstrap, organization membership, cache bounds,
-provider, core, or policy behavior. See the
-[Azure Table Storage guide](AZURE_TABLES.md).
+`createInMemoryStorageAdapter` is that same implementation over the storage-core
+memory store, so tests and examples exercise the production code path. It is
+ephemeral, non-durable, single-process, and not a production audit store;
+durability, restart recovery, and cross-process coordination are properties of
+the `Store` a deployment supplies. This slice removed the bespoke persistence
+layer and the Azure Table Storage package, and added no identity mutation,
+organization membership, bootstrap, cache limit, provider, core, or policy
+behavior. See [the storage guide](STORAGE.md).
 
 **Administrator-bootstrap decision (2026-07-25):** Bootstrap is a short-lived,
 out-of-band, operator-only host deployment ceremony, never a signup, login,

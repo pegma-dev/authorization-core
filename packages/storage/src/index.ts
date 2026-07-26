@@ -260,4 +260,4 @@ export interface InMemoryStorageAdapter
     RoleAssignmentAuditReader,
     AuditedRoleAssignmentMutationStore {}
 
-export { createInMemoryStorageAdapter } from "./in-memory.js";
+export { createInMemoryStorageAdapter, createRoleStore } from "./role-store.js";

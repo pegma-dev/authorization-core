@@ -165,9 +165,10 @@ the required administrator permission and that the policy version or digest
 matches the manifest. Policy defaults and unrelated roles do not satisfy this
 pre-mutation proof. Only then claim the durable execution fence and call
 `grantRoleAssignmentWithAudit` on the host's durable production storage adapter.
-Do not compose raw assignment and audit writes. Do not insert Azure Table rows
-directly. Do not use `createInMemoryStorageAdapter` in production; it is only an
-executable contract fixture.
+Do not compose raw assignment and audit writes. Do not write authorization
+records through the backend directly. Do not use
+`createInMemoryStorageAdapter` in production; it is only an executable contract
+fixture.
 
 Handle the result as follows:
 

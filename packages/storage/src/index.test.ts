@@ -5,41 +5,38 @@ import type {
   AccessSubject,
   ActiveRoleAssignment,
   IdentityAdapter,
-  IdentityLinkKey,
-  PrincipalId,
+  IdentityLink,
   RevokedRoleAssignment,
   RoleAssignment,
   RoleAssignmentActor,
-  RoleAssignmentId,
   RoleAssignmentScope,
 } from "@pegma/authorization-contracts";
 import { resolveAccess } from "@pegma/authorization-core";
-import type {
-  AppendRoleAssignmentAuditEventResult,
-  CreateRoleAssignmentResult,
-  PrincipalLookupStore,
-  RevokeRoleAssignmentCommand,
-  RevokeRoleAssignmentResult,
-  RoleAssignmentAuditEvent,
-  RoleAssignmentAuditEventId,
-  RoleAssignmentAuditStore,
-  RoleAssignmentConcurrencyToken,
-  RoleAssignmentStore,
-  SequencedRoleAssignmentAuditEvent,
-  VersionedRoleAssignment,
+import { createMemoryStore } from "@pegma/storage-core";
+import {
+  createInMemoryStorageAdapter,
+  createRoleStore,
+  type AuditedRoleAssignmentMutationStore,
+  type CreateRoleAssignmentResult,
+  type InMemoryStorageAdapter,
+  type PrincipalLookupStore,
+  type RevokeRoleAssignmentResult,
+  type RoleAssignmentAuditReader,
+  type RoleAssignmentReader,
+  type VersionedRoleAssignment,
 } from "@pegma/authorization-storage";
 
-const principalId = "principal_alpha";
-const otherPrincipalId = "principal_beta";
 const applicationScope: RoleAssignmentScope = { kind: "application" };
-const organizationAlphaScope: RoleAssignmentScope = {
+const organizationScope: RoleAssignmentScope = {
   kind: "organization",
   organizationId: "organization_alpha",
 };
-const organizationBetaScope: RoleAssignmentScope = {
+const otherOrganizationScope: RoleAssignmentScope = {
   kind: "organization",
   organizationId: "organization_beta",
 };
+/** A raw control character, spelled without writing one into this file. */
+const NUL = String.fromCharCode(0);
 const grantor: RoleAssignmentActor = {
   kind: "principal",
   principalId: "principal_admin",
@@ -49,283 +46,12 @@ const revoker: RoleAssignmentActor = {
   systemId: "role-administration",
 };
 
-const scopesEqual = (
-  left: RoleAssignmentScope,
-  right: RoleAssignmentScope,
-): boolean =>
-  left.kind === "application"
-    ? right.kind === "application"
-    : right.kind === "organization" &&
-      left.organizationId === right.organizationId;
-
-const actorsEqual = (
-  left: RoleAssignmentActor,
-  right: RoleAssignmentActor,
-): boolean =>
-  left.kind === "principal"
-    ? right.kind === "principal" && left.principalId === right.principalId
-    : right.kind === "system" && left.systemId === right.systemId;
-
-const grantsEqual = (
-  left: RoleAssignment,
-  right: ActiveRoleAssignment,
-): boolean =>
-  left.id === right.id &&
-  left.principalId === right.principalId &&
-  left.role === right.role &&
-  scopesEqual(left.scope, right.scope) &&
-  actorsEqual(left.grantedBy, right.grantedBy) &&
-  left.grantedAtEpochMs === right.grantedAtEpochMs;
-
-const revocationsEqual = (
-  assignment: RevokedRoleAssignment,
-  command: RevokeRoleAssignmentCommand,
-): boolean =>
-  actorsEqual(assignment.revokedBy, command.revokedBy) &&
-  assignment.revokedAtEpochMs === command.revokedAtEpochMs &&
-  assignment.reason === command.reason;
-
-const assignmentsEqual = (
-  left: RoleAssignment,
-  right: RoleAssignment,
-): boolean => {
-  if (!grantsEqual(left, { ...right, status: "active" })) {
-    return false;
-  }
-  if (left.status !== right.status) {
-    return false;
-  }
-  return left.status === "active"
-    ? true
-    : right.status === "revoked" &&
-        actorsEqual(left.revokedBy, right.revokedBy) &&
-        left.revokedAtEpochMs === right.revokedAtEpochMs &&
-        left.reason === right.reason;
-};
-
-const eventsEqual = (
-  left: RoleAssignmentAuditEvent,
-  right: RoleAssignmentAuditEvent,
-): boolean =>
-  left.id === right.id &&
-  left.kind === right.kind &&
-  assignmentsEqual(left.assignment, right.assignment);
-
-const cloneAssignment = (assignment: RoleAssignment): RoleAssignment =>
-  assignment.status === "active"
-    ? {
-        ...assignment,
-        scope: { ...assignment.scope },
-        grantedBy: { ...assignment.grantedBy },
-      }
-    : {
-        ...assignment,
-        scope: { ...assignment.scope },
-        grantedBy: { ...assignment.grantedBy },
-        revokedBy: { ...assignment.revokedBy },
-      };
-
-const cloneActiveAssignment = (
-  assignment: ActiveRoleAssignment,
-): ActiveRoleAssignment => ({
-  ...assignment,
-  scope: { ...assignment.scope },
-  grantedBy: { ...assignment.grantedBy },
-});
-
-class TestPrincipalLookupStore implements PrincipalLookupStore {
-  readonly #links = new Map<string, Map<string, PrincipalId>>();
-  failReads = false;
-
-  link(key: IdentityLinkKey, linkedPrincipalId: PrincipalId): void {
-    const subjects =
-      this.#links.get(key.issuer) ?? new Map<string, PrincipalId>();
-    subjects.set(key.subject, linkedPrincipalId);
-    this.#links.set(key.issuer, subjects);
-  }
-
-  async resolvePrincipalId(key: IdentityLinkKey): Promise<PrincipalId | null> {
-    if (this.failReads) {
-      throw new Error("identity lookup unavailable");
-    }
-    return this.#links.get(key.issuer)?.get(key.subject) ?? null;
-  }
-}
-
-class TestRoleAssignmentStore implements RoleAssignmentStore {
-  readonly #records = new Map<RoleAssignmentId, VersionedRoleAssignment>();
-  #nextToken = 1;
-  failReads = false;
-
-  async getRoleAssignment(
-    assignmentId: RoleAssignmentId,
-  ): Promise<VersionedRoleAssignment | null> {
-    this.#requireReadable();
-    return this.#records.get(assignmentId) ?? null;
-  }
-
-  async listActiveRoleAssignments(
-    selectedPrincipalId: PrincipalId,
-    selectedScope: RoleAssignmentScope,
-  ): Promise<readonly ActiveRoleAssignment[]> {
-    this.#requireReadable();
-    return [...this.#records.values()]
-      .map(({ assignment }) => assignment)
-      .filter(
-        (assignment): assignment is ActiveRoleAssignment =>
-          assignment.status === "active" &&
-          assignment.principalId === selectedPrincipalId &&
-          scopesEqual(assignment.scope, selectedScope),
-      )
-      .map((assignment) => cloneAssignment(assignment) as ActiveRoleAssignment);
-  }
-
-  async createRoleAssignment(
-    assignment: ActiveRoleAssignment,
-  ): Promise<CreateRoleAssignmentResult> {
-    const existing = this.#records.get(assignment.id);
-    if (existing !== undefined) {
-      return grantsEqual(existing.assignment, assignment)
-        ? { status: "unchanged", record: existing }
-        : { status: "conflict", reason: "assignment_id" };
-    }
-
-    if (
-      [...this.#records.values()].some(
-        ({ assignment: candidate }) =>
-          candidate.status === "active" &&
-          candidate.principalId === assignment.principalId &&
-          candidate.role === assignment.role &&
-          scopesEqual(candidate.scope, assignment.scope),
-      )
-    ) {
-      return { status: "conflict", reason: "active_tuple" };
-    }
-
-    const record = this.#version(cloneActiveAssignment(assignment));
-    this.#records.set(assignment.id, record);
-    return { status: "created", record };
-  }
-
-  async revokeRoleAssignment(
-    command: RevokeRoleAssignmentCommand,
-  ): Promise<RevokeRoleAssignmentResult> {
-    const existing = this.#records.get(command.assignmentId);
-    if (existing === undefined) {
-      return { status: "not_found" };
-    }
-    if (existing.assignment.status === "revoked") {
-      const revokedRecord: VersionedRoleAssignment<RevokedRoleAssignment> = {
-        assignment: existing.assignment,
-        concurrencyToken: existing.concurrencyToken,
-      };
-      return revocationsEqual(existing.assignment, command)
-        ? { status: "unchanged", record: revokedRecord }
-        : { status: "conflict", reason: "lifecycle" };
-    }
-    if (existing.concurrencyToken !== command.expectedConcurrencyToken) {
-      return { status: "conflict", reason: "concurrency" };
-    }
-    if (command.revokedAtEpochMs < existing.assignment.grantedAtEpochMs) {
-      return { status: "conflict", reason: "lifecycle" };
-    }
-
-    const revoked: RevokedRoleAssignment = {
-      ...existing.assignment,
-      status: "revoked",
-      revokedBy: { ...command.revokedBy },
-      revokedAtEpochMs: command.revokedAtEpochMs,
-      ...(command.reason === undefined ? {} : { reason: command.reason }),
-    };
-    const record = this.#version(revoked);
-    this.#records.set(command.assignmentId, record);
-    return { status: "revoked", record };
-  }
-
-  #requireReadable(): void {
-    if (this.failReads) {
-      throw new Error("role assignment read unavailable");
-    }
-  }
-
-  #version<Assignment extends RoleAssignment>(
-    assignment: Assignment,
-  ): VersionedRoleAssignment<Assignment> {
-    const concurrencyToken: RoleAssignmentConcurrencyToken = `version_${this.#nextToken}`;
-    this.#nextToken += 1;
-    return { assignment, concurrencyToken };
-  }
-}
-
-class TestRoleAssignmentAuditStore implements RoleAssignmentAuditStore {
-  readonly #byAssignment = new Map<
-    RoleAssignmentId,
-    SequencedRoleAssignmentAuditEvent[]
-  >();
-  readonly #byEventId = new Map<
-    RoleAssignmentAuditEventId,
-    SequencedRoleAssignmentAuditEvent
-  >();
-  failAppends = false;
-  failReads = false;
-
-  async appendRoleAssignmentAuditEvent(
-    event: RoleAssignmentAuditEvent,
-  ): Promise<AppendRoleAssignmentAuditEventResult> {
-    if (this.failAppends) {
-      throw new Error("audit append unavailable");
-    }
-    const existing = this.#byEventId.get(event.id);
-    if (existing !== undefined) {
-      return eventsEqual(existing.event, event)
-        ? { status: "unchanged", record: existing }
-        : { status: "conflict", reason: "event_id" };
-    }
-
-    const assignmentId = event.assignment.id;
-    const history = this.#byAssignment.get(assignmentId) ?? [];
-    const expectedKind = history.length === 0 ? "granted" : "revoked";
-    if (
-      event.kind !== expectedKind ||
-      history.length >= 2 ||
-      (event.kind === "revoked" &&
-        !grantsEqual(event.assignment, {
-          ...history[0]!.event.assignment,
-          status: "active",
-        }))
-    ) {
-      return { status: "conflict", reason: "lifecycle_position" };
-    }
-
-    const record: SequencedRoleAssignmentAuditEvent = {
-      sequence: history.length + 1,
-      event: {
-        ...event,
-        assignment: cloneAssignment(event.assignment),
-      } as RoleAssignmentAuditEvent,
-    };
-    history.push(record);
-    this.#byAssignment.set(assignmentId, history);
-    this.#byEventId.set(event.id, record);
-    return { status: "appended", record };
-  }
-
-  async listRoleAssignmentAuditEvents(
-    assignmentId: RoleAssignmentId,
-  ): Promise<readonly SequencedRoleAssignmentAuditEvent[]> {
-    if (this.failReads) {
-      throw new Error("audit read unavailable");
-    }
-    return [...(this.#byAssignment.get(assignmentId) ?? [])];
-  }
-}
-
 const activeAssignment = (
-  id: RoleAssignmentId,
+  id: string,
   overrides: Partial<ActiveRoleAssignment> = {},
 ): ActiveRoleAssignment => ({
   id,
-  principalId,
+  principalId: "principal_alpha",
   role: "support",
   scope: applicationScope,
   grantedBy: grantor,
@@ -334,50 +60,39 @@ const activeAssignment = (
   ...overrides,
 });
 
-const requireRecord = (
-  result: CreateRoleAssignmentResult,
-): VersionedRoleAssignment => {
-  if (result.status === "conflict") {
-    throw new Error("expected role assignment record");
+const grant = (
+  adapter: InMemoryStorageAdapter,
+  assignment: ActiveRoleAssignment,
+  auditEventId = `grant:${assignment.id}`,
+) => adapter.grantRoleAssignmentWithAudit({ assignment, auditEventId });
+
+const requireGrant = async (
+  adapter: InMemoryStorageAdapter,
+  assignment: ActiveRoleAssignment,
+  auditEventId = `grant:${assignment.id}`,
+) => {
+  const result = await grant(adapter, assignment, auditEventId);
+  if (result.status !== "granted") {
+    throw new Error(`expected granted, received ${result.status}`);
   }
-  return result.record;
+  return result;
 };
 
-describe("PrincipalLookupStore conformance", () => {
-  it("is structurally compatible with IdentityAdapter and looks up exact delimiter-safe keys", async () => {
+describe("storage port surface", () => {
+  it("keeps the read, audit, and safe-mutation contracts on one adapter", () => {
+    const adapter = createInMemoryStorageAdapter();
     expectTypeOf<PrincipalLookupStore>().toMatchTypeOf<IdentityAdapter>();
-    const store = new TestPrincipalLookupStore();
-    store.link({ issuer: "a|b", subject: "c" }, principalId);
-    store.link({ issuer: "a", subject: "b|c" }, otherPrincipalId);
-
-    await expect(
-      store.resolvePrincipalId({ issuer: "a|b", subject: "c" }),
-    ).resolves.toBe(principalId);
-    await expect(
-      store.resolvePrincipalId({ issuer: "a", subject: "b|c" }),
-    ).resolves.toBe(otherPrincipalId);
-    await expect(
-      store.resolvePrincipalId({ issuer: "A|b", subject: "c" }),
-    ).resolves.toBeNull();
-    await expect(
-      store.resolvePrincipalId({ issuer: "a|b", subject: "C" }),
-    ).resolves.toBeNull();
+    expectTypeOf(adapter).toMatchTypeOf<PrincipalLookupStore>();
+    expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentReader>();
+    expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentAuditReader>();
+    expectTypeOf(adapter).toMatchTypeOf<AuditedRoleAssignmentMutationStore>();
+    expect(Object.isFrozen(adapter)).toBe(true);
+    expect("createRoleAssignment" in adapter).toBe(false);
+    expect("revokeRoleAssignment" in adapter).toBe(false);
+    expect("appendRoleAssignmentAuditEvent" in adapter).toBe(false);
   });
 
-  it("distinguishes definitive absence from operational failure", async () => {
-    const store = new TestPrincipalLookupStore();
-    await expect(
-      store.resolvePrincipalId({ issuer: "issuer", subject: "absent" }),
-    ).resolves.toBeNull();
-    store.failReads = true;
-    await expect(
-      store.resolvePrincipalId({ issuer: "issuer", subject: "absent" }),
-    ).rejects.toThrow("identity lookup unavailable");
-  });
-});
-
-describe("RoleAssignmentStore conformance", () => {
-  it("narrows successful revoke records to revoked lifecycle evidence", () => {
+  it("narrows successful records to their exact lifecycle evidence", () => {
     type SuccessfulRevokeResult = Exclude<
       RevokeRoleAssignmentResult,
       { readonly status: "not_found" | "conflict" }
@@ -405,363 +120,791 @@ describe("RoleAssignmentStore conformance", () => {
     >().toEqualTypeOf<RoleAssignment>();
   });
 
-  it("isolates active reads by exact principal and mandatory exact scope", async () => {
-    const store = new TestRoleAssignmentStore();
-    await store.createRoleAssignment(activeAssignment("application"));
-    await store.createRoleAssignment(
-      activeAssignment("other_principal", {
-        principalId: otherPrincipalId,
+  it("binds any storage-core store to one host application namespace", async () => {
+    const store = createMemoryStore();
+    const first = createRoleStore(store, "application_one");
+    const second = createRoleStore(store, "application_two");
+
+    await requireGrant(first, activeAssignment("shared-literal"), "shared");
+    await requireGrant(second, activeAssignment("shared-literal"), "shared");
+
+    await expect(
+      first.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "shared-literal" }]);
+    await expect(
+      second.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "shared-literal" }]);
+    expect(Object.isFrozen(first)).toBe(true);
+  });
+});
+
+describe("principal lookup", () => {
+  it("resolves empty and seeded identity links by exact safe tuple", async () => {
+    const empty = createInMemoryStorageAdapter();
+    await expect(
+      empty.resolvePrincipalId({ issuer: "issuer", subject: "subject" }),
+    ).resolves.toBeNull();
+
+    const adapter = createInMemoryStorageAdapter({
+      identityLinks: [
+        {
+          key: { issuer: "a|b", subject: "c" },
+          principalId: "principal_delimiter_one",
+        },
+        {
+          key: { issuer: "a", subject: "b|c" },
+          principalId: "principal_delimiter_two",
+        },
+        {
+          key: { issuer: "__proto__", subject: "constructor" },
+          principalId: "principal_prototype",
+        },
+        {
+          key: { issuer: `issuer${NUL}x`, subject: `subject${NUL}y` },
+          principalId: "principal_nul",
+        },
+      ],
+    });
+
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a|b", subject: "c" }),
+    ).resolves.toBe("principal_delimiter_one");
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a", subject: "b|c" }),
+    ).resolves.toBe("principal_delimiter_two");
+    await expect(
+      adapter.resolvePrincipalId({
+        issuer: "__proto__",
+        subject: "constructor",
       }),
+    ).resolves.toBe("principal_prototype");
+    await expect(
+      adapter.resolvePrincipalId({
+        issuer: `issuer${NUL}x`,
+        subject: `subject${NUL}y`,
+      }),
+    ).resolves.toBe("principal_nul");
+  });
+
+  it("treats issuer and subject as an exact case-sensitive tuple", async () => {
+    const adapter = createInMemoryStorageAdapter({
+      identityLinks: [
+        { key: { issuer: "a|b", subject: "c" }, principalId: "principal_one" },
+      ],
+    });
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "A|b", subject: "c" }),
+    ).resolves.toBeNull();
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a|b", subject: "C" }),
+    ).resolves.toBeNull();
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a", subject: "b|c" }),
+    ).resolves.toBeNull();
+  });
+
+  it("accepts identical seed duplicates and rejects conflicting duplicates", async () => {
+    const link: IdentityLink = {
+      key: { issuer: "issuer", subject: "subject" },
+      principalId: "principal_alpha",
+    };
+    const adapter = createInMemoryStorageAdapter({
+      identityLinks: [link, structuredClone(link)],
+    });
+    await expect(adapter.resolvePrincipalId(link.key)).resolves.toBe(
+      "principal_alpha",
     );
-    await store.createRoleAssignment(
-      activeAssignment("organization_alpha", {
+    expect(() =>
+      createInMemoryStorageAdapter({
+        identityLinks: [link, { ...link, principalId: "principal_beta" }],
+      }),
+    ).toThrow("cannot seed multiple principals");
+  });
+
+  it("detaches identity seeds before returning", async () => {
+    const key = { issuer: "issuer", subject: "subject" };
+    const links: IdentityLink[] = [{ key, principalId: "principal_alpha" }];
+    const adapter = createInMemoryStorageAdapter({ identityLinks: links });
+    key.issuer = "changed";
+    links[0] = {
+      key: { issuer: "other", subject: "other" },
+      principalId: "principal_beta",
+    };
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "issuer", subject: "subject" }),
+    ).resolves.toBe("principal_alpha");
+  });
+});
+
+describe("role assignment reads", () => {
+  it("reads exact IDs and isolates active selection by principal and scope", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("application"));
+    await requireGrant(
+      adapter,
+      activeAssignment("other-principal", { principalId: "principal_beta" }),
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("organization", {
         role: "organization-admin",
-        scope: organizationAlphaScope,
+        scope: organizationScope,
       }),
     );
-    await store.createRoleAssignment(
-      activeAssignment("organization_beta", {
+    await requireGrant(
+      adapter,
+      activeAssignment("other-organization", {
         role: "billing",
-        scope: organizationBetaScope,
+        scope: otherOrganizationScope,
       }),
     );
 
+    await expect(adapter.getRoleAssignment("absent")).resolves.toBeNull();
     await expect(
-      store.listActiveRoleAssignments(principalId, applicationScope),
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
     ).resolves.toMatchObject([{ id: "application" }]);
     await expect(
-      store.listActiveRoleAssignments(principalId, organizationAlphaScope),
-    ).resolves.toMatchObject([{ id: "organization_alpha" }]);
+      adapter.listActiveRoleAssignments("principal_alpha", organizationScope),
+    ).resolves.toMatchObject([{ id: "organization" }]);
     await expect(
-      store.listActiveRoleAssignments(principalId, organizationBetaScope),
-    ).resolves.toMatchObject([{ id: "organization_beta" }]);
+      adapter.listActiveRoleAssignments(
+        "principal_alpha",
+        otherOrganizationScope,
+      ),
+    ).resolves.toMatchObject([{ id: "other-organization" }]);
     await expect(
-      store.listActiveRoleAssignments(otherPrincipalId, organizationAlphaScope),
+      adapter.listActiveRoleAssignments("principal_beta", organizationScope),
     ).resolves.toEqual([]);
   });
 
-  it("excludes revoked records from active selection but retains exact-ID evidence", async () => {
-    const store = new TestRoleAssignmentStore();
-    const created = requireRecord(
-      await store.createRoleAssignment(activeAssignment("revoked")),
+  it("returns every active role a principal holds in one exact scope", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("support"));
+    await requireGrant(adapter, activeAssignment("admin", { role: "admin" }));
+    await requireGrant(
+      adapter,
+      activeAssignment("billing", { role: "billing" }),
     );
-    const result = await store.revokeRoleAssignment({
-      assignmentId: "revoked",
-      expectedConcurrencyToken: created.concurrencyToken,
-      revokedBy: revoker,
-      revokedAtEpochMs: 1_700_000_001_000,
-      reason: "access removed",
-    });
 
-    expect(result.status).toBe("revoked");
+    const active = await adapter.listActiveRoleAssignments(
+      "principal_alpha",
+      applicationScope,
+    );
+    expect([...active].map(({ role }) => role).sort()).toEqual([
+      "admin",
+      "billing",
+      "support",
+    ]);
+  });
+
+  it("returns fresh, frozen, detached role and audit snapshots", async () => {
+    const scope = {
+      kind: "organization" as const,
+      organizationId: "organization_alpha",
+    };
+    const actor = {
+      kind: "principal" as const,
+      principalId: "principal_admin",
+    };
+    const assignment = activeAssignment("frozen", { scope, grantedBy: actor });
+    const adapter = createInMemoryStorageAdapter();
+    const result = await requireGrant(adapter, assignment);
+
+    scope.organizationId = "changed";
+    actor.principalId = "changed";
+    (assignment as { role: string }).role = "changed";
+
+    expect(result.record.assignment.role).toBe("support");
+    expect(result.record.assignment.scope).toEqual({
+      kind: "organization",
+      organizationId: "organization_alpha",
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.record)).toBe(true);
+    expect(Object.isFrozen(result.record.assignment)).toBe(true);
+    expect(Object.isFrozen(result.record.assignment.scope)).toBe(true);
+    expect(Object.isFrozen(result.record.assignment.grantedBy)).toBe(true);
+    expect(Object.isFrozen(result.auditRecord)).toBe(true);
+    expect(Object.isFrozen(result.auditRecord.event)).toBe(true);
+
+    const firstRead = await adapter.getRoleAssignment("frozen");
+    const secondRead = await adapter.getRoleAssignment("frozen");
+    expect(firstRead).not.toBe(secondRead);
+    expect(firstRead?.assignment).not.toBe(secondRead?.assignment);
+    const firstHistory = await adapter.listRoleAssignmentAuditEvents("frozen");
+    const secondHistory = await adapter.listRoleAssignmentAuditEvents("frozen");
+    expect(firstHistory).not.toBe(secondHistory);
+    expect(firstHistory[0]).not.toBe(secondHistory[0]);
+    expect(Object.isFrozen(firstHistory)).toBe(true);
+    expect(Object.isFrozen(firstHistory[0]?.event.assignment)).toBe(true);
+  });
+
+  it("reports definitive absence for an unknown assignment history", async () => {
+    const adapter = createInMemoryStorageAdapter();
     await expect(
-      store.listActiveRoleAssignments(principalId, applicationScope),
+      adapter.listRoleAssignmentAuditEvents("absent"),
     ).resolves.toEqual([]);
-    await expect(store.getRoleAssignment("revoked")).resolves.toMatchObject({
-      assignment: {
-        id: "revoked",
-        grantedBy: grantor,
-        grantedAtEpochMs: 1_700_000_000_000,
-        status: "revoked",
-        revokedBy: revoker,
-        revokedAtEpochMs: 1_700_000_001_000,
+    await expect(
+      adapter.listActiveRoleAssignments("principal_absent", applicationScope),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("audited grant", () => {
+  it("atomically grants sequence one and revokes sequence two", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(
+      adapter,
+      activeAssignment("lifecycle"),
+      "event_grant",
+    );
+    expect(granted.auditRecord).toMatchObject({
+      sequence: 1,
+      event: { id: "event_grant", kind: "granted" },
+    });
+    const revoked = await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "lifecycle",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      reason: "rotation",
+      auditEventId: "event_revoke",
+    });
+    expect(revoked).toMatchObject({
+      status: "revoked",
+      auditRecord: {
+        sequence: 2,
+        event: { id: "event_revoke", kind: "revoked" },
+      },
+      record: {
+        assignment: {
+          status: "revoked",
+          grantedBy: grantor,
+          revokedBy: revoker,
+          reason: "rotation",
+        },
+      },
+    });
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toEqual([]);
+    const history = await adapter.listRoleAssignmentAuditEvents("lifecycle");
+    expect(history.map(({ sequence }) => sequence)).toEqual([1, 2]);
+    expect(history[0]?.event.assignment.status).toBe("active");
+    expect(history[1]?.event.assignment.status).toBe("revoked");
+  });
+
+  it("keeps the grant event as active evidence after revocation", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(
+      adapter,
+      activeAssignment("evidence"),
+      "grant_evidence",
+    );
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "evidence",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "revoke_evidence",
+    });
+    const history = await adapter.listRoleAssignmentAuditEvents("evidence");
+    expect(history[0]).toMatchObject({
+      sequence: 1,
+      event: {
+        id: "grant_evidence",
+        kind: "granted",
+        assignment: { status: "active", grantedAtEpochMs: 1_700_000_000_000 },
       },
     });
   });
 
-  it("returns idempotent create, assignment-ID conflict, and active-tuple conflict distinctly", async () => {
-    const store = new TestRoleAssignmentStore();
-    const input = activeAssignment("one");
-    await expect(store.createRoleAssignment(input)).resolves.toMatchObject({
-      status: "created",
+  it("advances the record token across a lifecycle change", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("token"));
+    const revoked = await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "token",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "token_revoke",
     });
-    await expect(store.createRoleAssignment(input)).resolves.toMatchObject({
+    if (revoked.status !== "revoked") throw new Error("expected revoked");
+    expect(revoked.record.concurrencyToken).not.toBe(
+      granted.record.concurrencyToken,
+    );
+    const read = await adapter.getRoleAssignment("token");
+    expect(read?.concurrencyToken).toBe(revoked.record.concurrencyToken);
+  });
+
+  it("replays an exact grant as unchanged without a second event", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const assignment = activeAssignment("replay");
+    const first = await requireGrant(adapter, assignment, "grant_replay");
+    const second = await grant(adapter, assignment, "grant_replay");
+    expect(second).toMatchObject({
       status: "unchanged",
+      record: { concurrencyToken: first.record.concurrencyToken },
+      auditRecord: { sequence: 1, event: { id: "grant_replay" } },
     });
     await expect(
-      store.createRoleAssignment(activeAssignment("one", { role: "admin" })),
-    ).resolves.toEqual({
-      status: "conflict",
-      reason: "assignment_id",
+      adapter.listRoleAssignmentAuditEvents("replay"),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("never reactivates a revoked lifecycle on grant replay", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const assignment = activeAssignment("no-reactivate");
+    const granted = await requireGrant(adapter, assignment, "grant_event");
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: assignment.id,
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: assignment.grantedAtEpochMs,
+      auditEventId: "revoke_event",
     });
-    await expect(
-      store.createRoleAssignment(activeAssignment("two")),
-    ).resolves.toEqual({
-      status: "conflict",
-      reason: "active_tuple",
+    const replay = await grant(adapter, assignment, "grant_event");
+    expect(replay).toMatchObject({
+      status: "unchanged",
+      record: { assignment: { status: "revoked" } },
+      auditRecord: { sequence: 1, event: { kind: "granted" } },
     });
   });
 
-  it("never reactivates a revoked lifecycle when identical create is replayed", async () => {
-    const store = new TestRoleAssignmentStore();
-    const input = activeAssignment("never-reactivate");
-    const created = requireRecord(await store.createRoleAssignment(input));
-    await store.revokeRoleAssignment({
-      assignmentId: input.id,
-      expectedConcurrencyToken: created.concurrencyToken,
-      revokedBy: revoker,
-      revokedAtEpochMs: 1_700_000_001_000,
-    });
+  it("refuses a second active assignment for one exact tuple", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("original"), "event_original");
 
-    const replay = await store.createRoleAssignment(input);
-    expect(replay.status).toBe("unchanged");
-    if (replay.status !== "conflict") {
-      expect(replay.record.assignment.status).toBe("revoked");
-    }
+    await expect(
+      grant(adapter, activeAssignment("second"), "event_second"),
+    ).resolves.toEqual({ status: "conflict", reason: "active_tuple" });
+    await expect(adapter.getRoleAssignment("second")).resolves.toBeNull();
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("second"),
+    ).resolves.toEqual([]);
+  });
+
+  it("permits a fresh-ID regrant once the tuple is retired", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("first"));
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "first",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "first_revoke",
+    });
+    const regrant = await requireGrant(
+      adapter,
+      activeAssignment("second", { grantedAtEpochMs: 1_700_000_000_002 }),
+    );
+    expect(regrant.record.assignment.id).toBe("second");
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "second" }]);
+  });
+
+  it("refuses a different event ID for an existing assignment ID", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("occupied"), "first_event");
+    await expect(
+      grant(adapter, activeAssignment("occupied"), "different_event"),
+    ).resolves.toEqual({ status: "conflict", reason: "event_id" });
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("occupied"),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("keeps different scopes and principals in independent tuples", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("application-scope"));
+    await requireGrant(
+      adapter,
+      activeAssignment("organization-scope", { scope: organizationScope }),
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("other-principal", { principalId: "principal_beta" }),
+    );
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toHaveLength(1);
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", organizationScope),
+    ).resolves.toHaveLength(1);
+    await expect(
+      adapter.listActiveRoleAssignments("principal_beta", applicationScope),
+    ).resolves.toHaveLength(1);
   });
 
   it("returns one winner for distinct IDs targeting one active tuple", async () => {
-    const store = new TestRoleAssignmentStore();
-    // This deterministic fixture verifies result semantics, not backend
-    // interleaving; concrete adapters need a real race conformance test.
+    const adapter = createInMemoryStorageAdapter();
     const results = await Promise.all([
-      store.createRoleAssignment(activeAssignment("racer_one")),
-      store.createRoleAssignment(activeAssignment("racer_two")),
+      grant(adapter, activeAssignment("racer_one"), "event_one"),
+      grant(adapter, activeAssignment("racer_two"), "event_two"),
     ]);
 
-    expect(results.filter(({ status }) => status === "created")).toHaveLength(
+    expect(results.filter(({ status }) => status === "granted")).toHaveLength(
       1,
     );
     expect(results).toContainEqual({
       status: "conflict",
       reason: "active_tuple",
     });
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toHaveLength(1);
   });
 
-  it("advances the token, preserves grant evidence, rejects stale tokens, and supports exact replay", async () => {
-    const store = new TestRoleAssignmentStore();
-    const input = activeAssignment("conditional");
-    const created = requireRecord(await store.createRoleAssignment(input));
-    const command: RevokeRoleAssignmentCommand = {
-      assignmentId: input.id,
-      expectedConcurrencyToken: created.concurrencyToken,
-      revokedBy: revoker,
-      revokedAtEpochMs: 1_700_000_001_000,
-      reason: "rotation",
-    };
-    const revoked = await store.revokeRoleAssignment(command);
-    expect(revoked.status).toBe("revoked");
-    if (revoked.status === "revoked") {
-      expect(revoked.record.concurrencyToken).not.toBe(
-        created.concurrencyToken,
-      );
-      expect(revoked.record.assignment).toMatchObject({
-        id: input.id,
-        principalId: input.principalId,
-        role: input.role,
-        scope: input.scope,
-        grantedBy: input.grantedBy,
-        grantedAtEpochMs: input.grantedAtEpochMs,
-      });
-    }
-    await expect(store.revokeRoleAssignment(command)).resolves.toMatchObject({
-      status: "unchanged",
+  it("settles concurrent identical grants as one grant and one replay", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const assignment = activeAssignment("same");
+    const results = await Promise.all([
+      grant(adapter, assignment, "same-event"),
+      grant(adapter, assignment, "same-event"),
+    ]);
+    expect(results.map(({ status }) => status).sort()).toEqual([
+      "granted",
+      "unchanged",
+    ]);
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("same"),
+    ).resolves.toHaveLength(1);
+  });
+
+  it.each([
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])(
+    "rejects invalid grant timestamp %s without state changes",
+    async (timestamp) => {
+      const adapter = createInMemoryStorageAdapter();
+      await expect(
+        adapter.grantRoleAssignmentWithAudit({
+          assignment: activeAssignment("invalid", {
+            grantedAtEpochMs: timestamp,
+          }),
+          auditEventId: "invalid_event",
+        }),
+      ).rejects.toThrow("non-negative safe integer");
+      await expect(adapter.getRoleAssignment("invalid")).resolves.toBeNull();
+    },
+  );
+
+  it("rejects a non-active assignment on the grant path", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const revoked = {
+      ...activeAssignment("not-active"),
+      status: "revoked",
+    } as unknown as ActiveRoleAssignment;
+    await expect(
+      adapter.grantRoleAssignmentWithAudit({
+        assignment: revoked,
+        auditEventId: "invalid_event",
+      }),
+    ).rejects.toThrow("a grant requires an active role assignment");
+  });
+
+  it("keeps assignment, role, and event IDs delimiter, prototype, and NUL safe", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(
+      adapter,
+      activeAssignment("__proto__", { role: "prototype" }),
+      "constructor",
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("a|b", { role: "delimiter-one" }),
+      "c",
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("a", { role: "delimiter-two" }),
+      "b|c",
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment(`assignment${NUL}id`, { role: "nul" }),
+      `event${NUL}id`,
+    );
+
+    await expect(adapter.getRoleAssignment("__proto__")).resolves.toMatchObject(
+      {
+        assignment: { role: "prototype" },
+      },
+    );
+    await expect(adapter.getRoleAssignment("a|b")).resolves.toMatchObject({
+      assignment: { role: "delimiter-one" },
+    });
+    await expect(adapter.getRoleAssignment("a")).resolves.toMatchObject({
+      assignment: { role: "delimiter-two" },
     });
     await expect(
-      store.revokeRoleAssignment({
+      adapter.listRoleAssignmentAuditEvents(`assignment${NUL}id`),
+    ).resolves.toMatchObject([{ event: { id: `event${NUL}id` } }]);
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toHaveLength(4);
+  });
+
+  it("keeps principals whose IDs differ only by the key separator distinct", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(
+      adapter,
+      activeAssignment("left", { principalId: "a|b" }),
+      "left_event",
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("right", { principalId: "a%7Cb" }),
+      "right_event",
+    );
+    await expect(
+      adapter.listActiveRoleAssignments("a|b", applicationScope),
+    ).resolves.toMatchObject([{ id: "left" }]);
+    await expect(
+      adapter.listActiveRoleAssignments("a%7Cb", applicationScope),
+    ).resolves.toMatchObject([{ id: "right" }]);
+  });
+
+  it("isolates instances and permits the same literal in separate namespaces", async () => {
+    const first = createInMemoryStorageAdapter();
+    const second = createInMemoryStorageAdapter();
+    await requireGrant(first, activeAssignment("same"), "same");
+    await requireGrant(second, activeAssignment("same"), "same");
+    await expect(second.getRoleAssignment("same")).resolves.toMatchObject({
+      assignment: { status: "active" },
+    });
+    await expect(
+      first.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe("audited revoke", () => {
+  it("preserves grant evidence and derives revocation from the stored record", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const assignment = activeAssignment("evidence", {
+      grantedBy: { kind: "system", systemId: "bootstrap" },
+      scope: organizationScope,
+    });
+    const granted = await requireGrant(adapter, assignment);
+    const result = await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "evidence",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: assignment.grantedAtEpochMs,
+      reason: "complete",
+      auditEventId: "evidence_revoke",
+    });
+    if (result.status !== "revoked") throw new Error("expected revoked");
+    const revoked: RevokedRoleAssignment = result.record.assignment;
+    expect(revoked).toMatchObject({
+      id: assignment.id,
+      principalId: assignment.principalId,
+      role: assignment.role,
+      scope: organizationScope,
+      grantedBy: assignment.grantedBy,
+      grantedAtEpochMs: assignment.grantedAtEpochMs,
+      revokedBy: revoker,
+      reason: "complete",
+    });
+  });
+
+  it("replays an exact completed revocation as unchanged", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("replay"));
+    const command = {
+      assignmentId: "replay",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "revoke_replay",
+    } as const;
+    const first = await adapter.revokeRoleAssignmentWithAudit(command);
+    const second = await adapter.revokeRoleAssignmentWithAudit(command);
+    expect(first.status).toBe("revoked");
+    expect(second).toMatchObject({
+      status: "unchanged",
+      auditRecord: { sequence: 2, event: { id: "revoke_replay" } },
+    });
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("replay"),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("refuses a different operation against a revoked lifecycle", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("revoked"));
+    const command = {
+      assignmentId: "revoked",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "revoke_event",
+    } as const;
+    expect((await adapter.revokeRoleAssignmentWithAudit(command)).status).toBe(
+      "revoked",
+    );
+    await expect(
+      adapter.revokeRoleAssignmentWithAudit({
         ...command,
         revokedAtEpochMs: command.revokedAtEpochMs + 1,
       }),
     ).resolves.toEqual({ status: "conflict", reason: "lifecycle" });
-
-    const active = requireRecord(
-      await store.createRoleAssignment(
-        activeAssignment("stale-token", { role: "admin" }),
-      ),
-    );
     await expect(
-      store.revokeRoleAssignment({
+      adapter.revokeRoleAssignmentWithAudit({
         ...command,
-        assignmentId: "stale-token",
-        expectedConcurrencyToken: `${active.concurrencyToken}-stale`,
-      }),
-    ).resolves.toEqual({ status: "conflict", reason: "concurrency" });
-  });
-
-  it("prevents a delayed old-ID revoke from affecting a fresh regrant", async () => {
-    const store = new TestRoleAssignmentStore();
-    const old = requireRecord(
-      await store.createRoleAssignment(activeAssignment("old")),
-    );
-    await store.revokeRoleAssignment({
-      assignmentId: "old",
-      expectedConcurrencyToken: old.concurrencyToken,
-      revokedBy: revoker,
-      revokedAtEpochMs: 1_700_000_001_000,
-    });
-    await store.createRoleAssignment(
-      activeAssignment("fresh", { grantedAtEpochMs: 1_700_000_002_000 }),
-    );
-
-    await expect(
-      store.revokeRoleAssignment({
-        assignmentId: "old",
-        expectedConcurrencyToken: old.concurrencyToken,
-        revokedBy: revoker,
-        revokedAtEpochMs: 1_700_000_003_000,
+        revokedBy: { kind: "system", systemId: "competitor" },
       }),
     ).resolves.toEqual({ status: "conflict", reason: "lifecycle" });
     await expect(
-      store.listActiveRoleAssignments(principalId, applicationScope),
+      adapter.revokeRoleAssignmentWithAudit({
+        ...command,
+        auditEventId: "other_event",
+      }),
+    ).resolves.toEqual({ status: "conflict", reason: "lifecycle" });
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("revoked"),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("rejects a stale token against an active record", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("stale"));
+    await expect(
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "stale",
+        expectedConcurrencyToken: "not-the-token",
+        revokedBy: revoker,
+        revokedAtEpochMs: 1_700_000_000_001,
+        auditEventId: "stale_event",
+      }),
+    ).resolves.toEqual({ status: "conflict", reason: "concurrency" });
+    await expect(adapter.getRoleAssignment("stale")).resolves.toMatchObject({
+      assignment: { status: "active" },
+    });
+  });
+
+  it("rejects revocation earlier than its grant", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("ordered"));
+    await expect(
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "ordered",
+        expectedConcurrencyToken: granted.record.concurrencyToken,
+        revokedBy: revoker,
+        revokedAtEpochMs: 1_699_999_999_999,
+        auditEventId: "early_event",
+      }),
+    ).resolves.toEqual({ status: "conflict", reason: "lifecycle" });
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("ordered"),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("returns not_found for an absent exact ID", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await expect(
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "absent",
+        expectedConcurrencyToken: "token",
+        revokedBy: revoker,
+        revokedAtEpochMs: 0,
+        auditEventId: "absent_event",
+      }),
+    ).resolves.toEqual({ status: "not_found" });
+  });
+
+  it("prevents a delayed old-ID revoke from affecting a fresh regrant", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const old = await requireGrant(adapter, activeAssignment("old"));
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "old",
+      expectedConcurrencyToken: old.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "old_revoke",
+    });
+    await requireGrant(
+      adapter,
+      activeAssignment("fresh", { grantedAtEpochMs: 1_700_000_000_002 }),
+    );
+
+    await expect(
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "old",
+        expectedConcurrencyToken: old.record.concurrencyToken,
+        revokedBy: { kind: "system", systemId: "late-command" },
+        revokedAtEpochMs: 1_700_000_000_003,
+        auditEventId: "late_event",
+      }),
+    ).resolves.toEqual({ status: "conflict", reason: "lifecycle" });
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
     ).resolves.toMatchObject([{ id: "fresh" }]);
   });
 
-  it("distinguishes definitive empty and not-found results from read failure", async () => {
-    const store = new TestRoleAssignmentStore();
-    await expect(store.getRoleAssignment("absent")).resolves.toBeNull();
-    await expect(
-      store.listActiveRoleAssignments(principalId, applicationScope),
-    ).resolves.toEqual([]);
-    await expect(
-      store.revokeRoleAssignment({
-        assignmentId: "absent",
-        expectedConcurrencyToken: "version_absent",
+  it("returns one winner for competing revocations of one record", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("competing"));
+    const results = await Promise.all([
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "competing",
+        expectedConcurrencyToken: granted.record.concurrencyToken,
         revokedBy: revoker,
-        revokedAtEpochMs: 1_700_000_001_000,
+        revokedAtEpochMs: 1_700_000_000_001,
+        auditEventId: "competing-a",
       }),
-    ).resolves.toEqual({ status: "not_found" });
-    store.failReads = true;
-    await expect(store.getRoleAssignment("absent")).rejects.toThrow(
-      "role assignment read unavailable",
+      adapter.revokeRoleAssignmentWithAudit({
+        assignmentId: "competing",
+        expectedConcurrencyToken: granted.record.concurrencyToken,
+        revokedBy: { kind: "system", systemId: "other" },
+        revokedAtEpochMs: 1_700_000_000_001,
+        auditEventId: "competing-b",
+      }),
+    ]);
+    expect(results.filter(({ status }) => status === "revoked")).toHaveLength(
+      1,
+    );
+    expect(results.filter(({ status }) => status === "conflict")).toHaveLength(
+      1,
     );
     await expect(
-      store.listActiveRoleAssignments(principalId, applicationScope),
-    ).rejects.toThrow("role assignment read unavailable");
-  });
-});
-
-describe("RoleAssignmentAuditStore conformance", () => {
-  it("assigns positive per-assignment sequence and lists strictly increasing lifecycle order", async () => {
-    const store = new TestRoleAssignmentAuditStore();
-    const active = activeAssignment("audited");
-    const revoked: RevokedRoleAssignment = {
-      ...active,
-      status: "revoked",
-      revokedBy: revoker,
-      revokedAtEpochMs: 1_700_000_001_000,
-    };
-
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        id: "event_granted",
-        kind: "granted",
-        assignment: active,
-      }),
-    ).resolves.toMatchObject({
-      status: "appended",
-      record: { sequence: 1 },
-    });
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        id: "event_revoked",
-        kind: "revoked",
-        assignment: revoked,
-      }),
-    ).resolves.toMatchObject({
-      status: "appended",
-      record: { sequence: 2 },
-    });
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        id: "event_other_assignment",
-        kind: "granted",
-        assignment: activeAssignment("audited_independently"),
-      }),
-    ).resolves.toMatchObject({
-      status: "appended",
-      record: { sequence: 1 },
-    });
-    const events = await store.listRoleAssignmentAuditEvents(active.id);
-    expect(events.map(({ sequence }) => sequence)).toEqual([1, 2]);
-    expect(
-      events.every(
-        ({ sequence }) => Number.isSafeInteger(sequence) && sequence > 0,
-      ),
-    ).toBe(true);
+      adapter.listRoleAssignmentAuditEvents("competing"),
+    ).resolves.toHaveLength(2);
   });
 
-  it("makes exact replay idempotent and distinguishes event-ID from lifecycle-position conflict", async () => {
-    const store = new TestRoleAssignmentAuditStore();
-    const granted: RoleAssignmentAuditEvent = {
-      id: "event_one",
-      kind: "granted",
-      assignment: activeAssignment("audit-conflicts"),
-    };
-    await store.appendRoleAssignmentAuditEvent(granted);
-    await expect(
-      store.appendRoleAssignmentAuditEvent(granted),
-    ).resolves.toMatchObject({ status: "unchanged", record: { sequence: 1 } });
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        ...granted,
-        kind: "granted",
-        assignment: activeAssignment("different-assignment"),
-      }),
-    ).resolves.toEqual({ status: "conflict", reason: "event_id" });
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        ...granted,
-        id: "event_duplicate_grant",
-      }),
-    ).resolves.toEqual({
-      status: "conflict",
-      reason: "lifecycle_position",
-    });
-    await expect(
-      store.appendRoleAssignmentAuditEvent({
-        id: "event_revoked_without_grant",
-        kind: "revoked",
-        assignment: {
-          ...activeAssignment("revoked-without-grant"),
-          status: "revoked",
+  it.each([
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])(
+    "rejects invalid revoke timestamp %s without state changes",
+    async (timestamp) => {
+      const adapter = createInMemoryStorageAdapter();
+      const granted = await requireGrant(adapter, activeAssignment("invalid"));
+      await expect(
+        adapter.revokeRoleAssignmentWithAudit({
+          assignmentId: "invalid",
+          expectedConcurrencyToken: granted.record.concurrencyToken,
           revokedBy: revoker,
-          revokedAtEpochMs: 1_700_000_001_000,
-        },
-      }),
-    ).resolves.toEqual({
-      status: "conflict",
-      reason: "lifecycle_position",
-    });
-  });
-
-  it("rejects audit failures instead of presenting partial success or definitive emptiness", async () => {
-    const store = new TestRoleAssignmentAuditStore();
-    const event: RoleAssignmentAuditEvent = {
-      id: "event_failure",
-      kind: "granted",
-      assignment: activeAssignment("audit-failure"),
-    };
-    store.failAppends = true;
-    await expect(store.appendRoleAssignmentAuditEvent(event)).rejects.toThrow(
-      "audit append unavailable",
-    );
-    store.failAppends = false;
-    store.failReads = true;
-    await expect(
-      store.listRoleAssignmentAuditEvents(event.assignment.id),
-    ).rejects.toThrow("audit read unavailable");
-  });
-
-  it("keeps mutation and audit operations explicitly separate and therefore non-atomic", async () => {
-    const roles = new TestRoleAssignmentStore();
-    const audit = new TestRoleAssignmentAuditStore();
-    const assignment = activeAssignment("non-atomic");
-    await roles.createRoleAssignment(assignment);
-    audit.failAppends = true;
-
-    await expect(
-      audit.appendRoleAssignmentAuditEvent({
-        id: "event_non_atomic",
-        kind: "granted",
-        assignment,
-      }),
-    ).rejects.toThrow("audit append unavailable");
-    await expect(roles.getRoleAssignment(assignment.id)).resolves.toMatchObject(
-      {
-        assignment: { status: "active" },
-      },
-    );
-  });
+          revokedAtEpochMs: timestamp,
+          auditEventId: "invalid_revoke",
+        }),
+      ).rejects.toThrow("non-negative safe integer");
+      expect(
+        (await adapter.getRoleAssignment("invalid"))?.assignment.status,
+      ).toBe("active");
+    },
+  );
 });
 
 describe("authorization boundary", () => {
@@ -774,7 +917,10 @@ describe("authorization boundary", () => {
     >();
 
     const context = resolveAccess(
-      { principalId, roles: ["provider|subject", "unknown-role"] },
+      {
+        principalId: "principal_alpha",
+        roles: ["provider|subject", "unknown-role"],
+      },
       { version: "storage-contract", roles: { support: ["support.read"] } },
     );
     expect(context.permissions).toEqual([]);
@@ -783,5 +929,31 @@ describe("authorization boundary", () => {
     expect(context).not.toHaveProperty("audit");
     expect(context).not.toHaveProperty("issuer");
     expect(context).not.toHaveProperty("subject");
+  });
+
+  it("projects only role names from a complete active selection", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("support"));
+    await requireGrant(adapter, activeAssignment("admin", { role: "admin" }));
+
+    const active = await adapter.listActiveRoleAssignments(
+      "principal_alpha",
+      applicationScope,
+    );
+    const context = resolveAccess(
+      {
+        principalId: "principal_alpha",
+        roles: [...active].map(({ role }) => role),
+      },
+      {
+        version: "storage-contract",
+        roles: { support: ["support.read"], admin: ["admin.write"] },
+      },
+    );
+    expect([...context.permissions].sort()).toEqual([
+      "admin.write",
+      "support.read",
+    ]);
+    expect(context).not.toHaveProperty("assignmentId");
   });
 });
