@@ -28,7 +28,8 @@
     "directory": "packages/storage"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.0.0"
+    "@pegma/authorization-contracts": "0.0.0",
+    "@pegma/storage-core": "0.1.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
