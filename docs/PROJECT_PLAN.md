@@ -2,10 +2,9 @@
 
 ## Status
 
-**Stage:** Phase 5 first advertised release candidate (Foundation and Phases
-1–4 complete; Phase 5 documentation, API reference, runnable example, and
-verified package-release path complete; the non-default `0.0.0` package-name
-bootstrap is published; `0.x` public API remains unstable)
+**Stage:** Phase 5 complete; Phase 6 integration feedback and stabilization
+next (the signed `v0.1.0` release published all seven first-advertised packages
+through OIDC with provenance on 2026-07-27; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -676,6 +675,16 @@ through OIDC. This bootstrap slice does not publish a package, change a
 version, create a tag, or create a release, so Phase 5 remains pending. See
 [Release operations](RELEASING.md).
 
+**First advertised release boundary (2026-07-27):** The protected signed
+annotated `v0.1.0` tag targets merged `main` commit
+`c5186b8258a786641da15b9f47404630c4374aee`. The stable GitHub release ran the
+full gate, prepared one verified tarball set without publication authority, and
+published all seven packages through the minimal OIDC job in contracts-first
+order. Registry verification matched every published integrity to the prepared
+manifest, retained `0.0.0` only under `bootstrap`, selected `0.1.0` as `latest`,
+and confirmed SLSA provenance attestations. The Phase 5 publication deliverable
+and exit criterion are complete.
+
 **Exit criterion:** A new SaaS project can integrate identity, billing, staff
 roles, and one protected module using only public documentation.
 
@@ -734,7 +743,8 @@ administrator bootstrap, and signing-key compromise.
 
 - Packages publish under the `@pegma` npm organization, registered on
   2026-07-26. The non-default `0.0.0` package-name bootstrap was published on
-  2026-07-27; `0.1.0` is the first advertised release.
+  2026-07-27; the signed `v0.1.0` OIDC release published the first advertised
+  package set later that day.
 - All packages begin at `0.x`; breaking changes may occur with clear release
   notes.
 - Packages in this repository release together until their contracts stabilize.
@@ -749,7 +759,7 @@ administrator bootstrap, and signing-key compromise.
 
 ## Documentation deliverables
 
-Before the first public package release, a Phase 5 deliverable:
+Delivered with the first public package release in Phase 5:
 
 - [Getting-started guide](GETTING_STARTED.md)
 - Policy reference
@@ -773,9 +783,8 @@ speculatively:
 
 ## Near-term backlog
 
-1. Review the synchronized `0.1.0` version and release notes, then create the
-   first stable GitHub release so OIDC publishes the first advertised package
-   set with provenance.
+1. Integrate Authorization Core into RetireGolden's support system and record
+   contract friction before stabilizing or expanding shared abstractions.
 
 The backlog should stay small until the first integration reveals which
 abstractions are genuinely reusable.
