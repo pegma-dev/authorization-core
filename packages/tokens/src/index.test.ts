@@ -27,7 +27,7 @@ import {
   type AccessGrantIssuerConfiguration,
   type SourceAuthorizationSnapshot,
 } from "./index.js";
-import { JwksCache } from "./jwks.js";
+import { defaultJwksFetcher, JwksCache } from "./jwks.js";
 import {
   createTestAccessGrantIssuer,
   createTestAccessGrantVerifier,
@@ -1225,6 +1225,44 @@ describe("@pegma/authorization-tokens JWKS", () => {
       }),
     });
     await expect(redirected.resolve(kid)).rejects.toThrow("changed origin");
+  });
+
+  it("follows same-origin redirects with the production JWKS fetcher", async () => {
+    const originalFetch = globalThis.fetch;
+    const body = await jwksBody();
+    try {
+      globalThis.fetch = (async (url, init) => {
+        expect(url).toBe("https://authorization.example.test/jwks.json");
+        expect(init).toMatchObject({
+          method: "GET",
+          redirect: "follow",
+          headers: { accept: "application/json" },
+        });
+        const response = new Response(body, { status: 200 });
+        Object.defineProperty(response, "url", {
+          value: "https://authorization.example.test/redirected/jwks.json",
+        });
+        return response;
+      }) as typeof fetch;
+
+      await expect(
+        defaultJwksFetcher("https://authorization.example.test/jwks.json"),
+      ).resolves.toMatchObject({
+        body: expect.any(Uint8Array),
+        finalUrl: "https://authorization.example.test/redirected/jwks.json",
+      });
+
+      const cache = new JwksCache({
+        issuer: issuerName,
+        url: "https://authorization.example.test/jwks.json",
+        maxAgeMs: 1,
+        monotonicNowMs: () => 0,
+        fetcher: defaultJwksFetcher,
+      });
+      await expect(cache.resolve(kid)).resolves.toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("denies an in-flight JWKS refresh after terminal monotonic regression", async () => {

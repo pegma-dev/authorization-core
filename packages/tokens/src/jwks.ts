@@ -165,7 +165,7 @@ export async function defaultJwksFetcher(
 ): Promise<JwksFetchResult> {
   const response = await fetch(url, {
     method: "GET",
-    redirect: "manual",
+    redirect: "follow",
     headers: { accept: "application/json" },
   });
   if (!response.ok) {
