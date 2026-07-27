@@ -5,7 +5,12 @@ import {
   type StoredRecord,
 } from "@pegma/storage-core";
 
-import { fail, isCanonicalBase64Url32 } from "./internal.js";
+import {
+  encodeStorageKeyPart,
+  fail,
+  isBoundedIdentity,
+  isCanonicalBase64Url32,
+} from "./internal.js";
 
 /** One issuer-owned identifier permanently reserved before signing. */
 export interface AccessGrantJtiReservation {
@@ -14,21 +19,13 @@ export interface AccessGrantJtiReservation {
   readonly jti: string;
 }
 
-function encodeKeyPart(value: string): string {
-  let encoded = "";
-  for (let index = 0; index < value.length; index += 1) {
-    encoded += value.charCodeAt(index).toString(16).padStart(4, "0");
-  }
-  return encoded;
-}
-
 export function accessGrantJtiReservationKey(
   issuer: string,
   applicationId: string,
   jti: string,
 ): EntityKey {
   return {
-    partition: `v1-${encodeKeyPart(issuer)}-${encodeKeyPart(applicationId)}`,
+    partition: `v1-${encodeStorageKeyPart(issuer)}-${encodeStorageKeyPart(applicationId)}`,
     id: jti,
   };
 }
@@ -65,7 +62,7 @@ export const accessGrantJtiReservations =
         };
         if (
           reservation.issuer.length === 0 ||
-          reservation.applicationId.length === 0 ||
+          !isBoundedIdentity(reservation.applicationId) ||
           !isCanonicalBase64Url32(reservation.jti)
         ) {
           fail("access-grant identifier reservation is corrupt");

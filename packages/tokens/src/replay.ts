@@ -5,7 +5,13 @@ import {
   type StoredRecord,
 } from "@pegma/storage-core";
 
-import { fail, isCanonicalBase64Url32, isNumericDate } from "./internal.js";
+import {
+  encodeStorageKeyPart,
+  fail,
+  isBoundedIdentity,
+  isCanonicalBase64Url32,
+  isNumericDate,
+} from "./internal.js";
 
 /** One exact V1 grant consumption. Records may safely be retained indefinitely. */
 export interface AccessGrantReplayRecord {
@@ -33,20 +39,6 @@ function requireStoredNumber(record: StoredRecord, field: string): number {
   return value;
 }
 
-/**
- * Encode exact UTF-16 code units into backend-safe text.
- *
- * The fixed-width representation is injective even for unusual JavaScript
- * strings and avoids ambiguous delimiter concatenation in replay keys.
- */
-function encodeKeyPart(value: string): string {
-  let encoded = "";
-  for (let index = 0; index < value.length; index += 1) {
-    encoded += value.charCodeAt(index).toString(16).padStart(4, "0");
-  }
-  return encoded;
-}
-
 export function accessGrantReplayKey(
   issuer: string,
   applicationId: string,
@@ -54,7 +46,7 @@ export function accessGrantReplayKey(
   jti: string,
 ): EntityKey {
   return {
-    partition: `v1-${encodeKeyPart(issuer)}-${encodeKeyPart(applicationId)}-${encodeKeyPart(audience)}`,
+    partition: `v1-${encodeStorageKeyPart(issuer)}-${encodeStorageKeyPart(applicationId)}-${encodeStorageKeyPart(audience)}`,
     id: jti,
   };
 }
@@ -87,7 +79,7 @@ export const accessGrantReplays = defineCollection<AccessGrantReplayRecord>({
       };
       if (
         decoded.issuer.length === 0 ||
-        decoded.applicationId.length === 0 ||
+        !isBoundedIdentity(decoded.applicationId) ||
         decoded.audience.length === 0 ||
         !isCanonicalBase64Url32(decoded.jti) ||
         !isNumericDate(decoded.retainThrough)

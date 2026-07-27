@@ -179,6 +179,20 @@ export function policyPair(version: string, digest: string): string {
 }
 
 /**
+ * Encode exact UTF-16 code units into backend-safe text.
+ *
+ * The fixed-width representation is injective even for unusual JavaScript
+ * strings and avoids ambiguous delimiter concatenation in storage keys.
+ */
+export function encodeStorageKeyPart(value: string): string {
+  let encoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    encoded += value.charCodeAt(index).toString(16).padStart(4, "0");
+  }
+  return encoded;
+}
+
+/**
  * Parse JSON while retaining the profile's duplicate-member rejection.
  *
  * JSON.parse cannot expose duplicate object names, so the small recursive
