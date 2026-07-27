@@ -1,7 +1,7 @@
 # The Identity adapter: `@pegma/authorization-identity`
 
 Decided 2026-07-27 as a plan; implementation waits for `@pegma/identity`
-to exist (see pegma-dev/identity, `docs/PROJECT_PLAN.md`). This is the
+to exist (its plan: <https://github.com/pegma-dev/identity/blob/main/docs/PROJECT_PLAN.md> - that repository's plan, not this one's). This is the
 decision record for the adapter linking Pegma's first-party identity
 component into Authorization Core.
 
