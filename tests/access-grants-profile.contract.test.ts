@@ -81,6 +81,13 @@ const boundSourceAuthorizations = new WeakMap<
   BoundSourceAuthorization
 >();
 
+class AuthoritativeSourceAuthorizationRead {}
+
+const authoritativeSourceAuthorizationReads = new WeakMap<
+  AuthoritativeSourceAuthorizationRead,
+  BoundSourceAuthorization
+>();
+
 type IssueInput = Readonly<{
   configuration: TestIssuerConfiguration;
   audience: string;
@@ -285,17 +292,19 @@ class TestIssuerConfiguration {
   }
 }
 
-function bindSourceAuthorization(
+function performAuthoritativeSourceRead(
   configuration: TestIssuerConfiguration,
   input: Readonly<{
-    context: AccessContext;
-    policyDigest: string;
-    scope:
-      | Readonly<{ kind: "application" }>
-      | Readonly<{ kind: "organization"; organizationId: string }>;
+    read: () => Readonly<{
+      context: AccessContext;
+      policyDigest: string;
+      scope:
+        | Readonly<{ kind: "application" }>
+        | Readonly<{ kind: "organization"; organizationId: string }>;
+    }>;
     maximumLifetimeMs: number;
   }>,
-): SourceAuthorizationCapability {
+): AuthoritativeSourceAuthorizationRead {
   const state = testIssuerStates.get(configuration);
   if (state === undefined) {
     fail("issuer state is unavailable");
@@ -308,19 +317,33 @@ function bindSourceAuthorization(
     fail("source authorization lifetime is invalid");
   }
   const readStartedAtMs = state.monotonicClock.sample();
-  const capability = new SourceAuthorizationCapability();
-  boundSourceAuthorizations.set(
-    capability,
+  const source = input.read();
+  const read = new AuthoritativeSourceAuthorizationRead();
+  authoritativeSourceAuthorizationReads.set(
+    read,
     Object.freeze({
       configuration,
       applicationId: configuration.applicationId,
-      context: input.context,
-      policyVersion: input.context.policyVersion,
-      policyDigest: input.policyDigest,
-      scope: Object.freeze({ ...input.scope }),
+      context: source.context,
+      policyVersion: source.context.policyVersion,
+      policyDigest: source.policyDigest,
+      scope: Object.freeze({ ...source.scope }),
       expiresAtMonotonicMs: readStartedAtMs + input.maximumLifetimeMs,
     }),
   );
+  return Object.freeze(read);
+}
+
+function bindSourceAuthorization(
+  configuration: TestIssuerConfiguration,
+  read: AuthoritativeSourceAuthorizationRead,
+): SourceAuthorizationCapability {
+  const source = authoritativeSourceAuthorizationReads.get(read);
+  if (source === undefined || source.configuration !== configuration) {
+    fail("source authorization read is forged or belongs to another issuer");
+  }
+  const capability = new SourceAuthorizationCapability();
+  boundSourceAuthorizations.set(capability, source);
   return Object.freeze(capability);
 }
 
@@ -907,15 +930,18 @@ function sourceAuthorization(
     maximumLifetimeMs: number;
   }> = {},
 ): SourceAuthorizationCapability {
-  return bindSourceAuthorization(
-    overrides.configuration ?? issuerConfiguration,
-    {
+  const configuration = overrides.configuration ?? issuerConfiguration;
+  const read = performAuthoritativeSourceRead(configuration, {
+    // This callback models the trusted host's actual authoritative read. A
+    // cache must retain and rebind its original opaque read evidence instead.
+    read: () => ({
       context: overrides.context ?? context,
       policyDigest: overrides.policyDigest ?? digest,
       scope: overrides.scope ?? { kind: "application" },
-      maximumLifetimeMs: overrides.maximumLifetimeMs ?? 60_000,
-    },
-  );
+    }),
+    maximumLifetimeMs: overrides.maximumLifetimeMs ?? 60_000,
+  });
+  return bindSourceAuthorization(configuration, read);
 }
 
 function issue(overrides: Partial<IssueInput> = {}): TestCompactGrant {
@@ -1130,6 +1156,82 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     expect(
       issue({ configuration: restarted, source: restartedSource }),
     ).toBeDefined();
+  });
+
+  it("preserves the authoritative source deadline when read evidence is rebound", () => {
+    let monotonicNowMs = 0;
+    const cachedIssuer = createIssuerConfiguration({
+      monotonicNowMs: () => monotonicNowMs,
+    });
+    const authoritativeRead = performAuthoritativeSourceRead(cachedIssuer, {
+      read: () => ({
+        context,
+        policyDigest: digest,
+        scope: { kind: "application" },
+      }),
+      maximumLifetimeMs: 60_000,
+    });
+    expect(() =>
+      bindSourceAuthorization(
+        cachedIssuer,
+        new AuthoritativeSourceAuthorizationRead(),
+      ),
+    ).toThrow("source authorization read is forged");
+    expect(() =>
+      bindSourceAuthorization(createIssuerConfiguration(), authoritativeRead),
+    ).toThrow("belongs to another issuer");
+
+    monotonicNowMs = 30_000;
+    const firstBinding = bindSourceAuthorization(
+      cachedIssuer,
+      authoritativeRead,
+    );
+    expect(
+      parseClaims(
+        issue({
+          configuration: cachedIssuer,
+          source: firstBinding,
+        }).claims,
+      ).exp - Math.floor(issuerWallNowEpochMs / 1_000),
+    ).toBe(25);
+
+    monotonicNowMs = 59_000;
+    const nearlyExpired = bindSourceAuthorization(
+      cachedIssuer,
+      authoritativeRead,
+    );
+    expect(() =>
+      issue({ configuration: cachedIssuer, source: nearlyExpired }),
+    ).toThrow("not enough source authorization lifetime");
+
+    monotonicNowMs = 60_000;
+    const rebound = bindSourceAuthorization(cachedIssuer, authoritativeRead);
+    expect(() =>
+      issue({ configuration: cachedIssuer, source: rebound }),
+    ).toThrow("source authorization deadline is invalid or expired");
+  });
+
+  it("charges authoritative-read latency against the original source deadline", () => {
+    let monotonicNowMs = 0;
+    const slowReadIssuer = createIssuerConfiguration({
+      monotonicNowMs: () => monotonicNowMs,
+    });
+    const slowRead = performAuthoritativeSourceRead(slowReadIssuer, {
+      read: () => {
+        monotonicNowMs = 55_000;
+        return {
+          context,
+          policyDigest: digest,
+          scope: { kind: "application" },
+        };
+      },
+      maximumLifetimeMs: 60_000,
+    });
+    const source = bindSourceAuthorization(slowReadIssuer, slowRead);
+
+    expect(() => issue({ configuration: slowReadIssuer, source })).toThrow(
+      "not enough source authorization lifetime",
+    );
   });
 
   it("permanently fails an issuer clock domain after any regression", () => {
