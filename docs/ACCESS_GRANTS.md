@@ -164,9 +164,11 @@ fields. The capability belongs to one exact issuer instance and clock-domain
 token and is unusable after a process restart or with another issuer instance.
 The host creates its opaque read evidence as part of the authoritative source
 read and records that read's original monotonic deadline. Binding or rebinding
-the evidence later preserves that exact deadline; wrapping a cached
-`AccessContext` with a newly calculated lifetime is invalid and cannot restart
-the authorization window.
+the evidence later preserves that exact deadline. The evidence owns a frozen
+snapshot of every `AccessContext` field and array; retaining or mutating the
+object returned by the read cannot alter the bound principal, policy, roles,
+entitlements, or permissions. Wrapping a cached `AccessContext` with a newly
+calculated lifetime is invalid and cannot restart the authorization window.
 The issuer owns the guarded monotonic clock and wall-clock readers; an issuance
 request cannot supply or observe their samples. Any invalid or regressing
 monotonic sample permanently fails that in-process clock domain, clears

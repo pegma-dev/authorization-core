@@ -155,6 +155,16 @@ function canonicalizePermissions(values: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(values)].sort());
 }
 
+function snapshotAccessContext(value: AccessContext): AccessContext {
+  return Object.freeze({
+    principalId: value.principalId,
+    policyVersion: value.policyVersion,
+    roles: Object.freeze([...value.roles]),
+    entitlements: Object.freeze([...value.entitlements]),
+    permissions: Object.freeze([...value.permissions]),
+  });
+}
+
 function isPrincipalId(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -318,14 +328,15 @@ function performAuthoritativeSourceRead(
   }
   const readStartedAtMs = state.monotonicClock.sample();
   const source = input.read();
+  const context = snapshotAccessContext(source.context);
   const read = new AuthoritativeSourceAuthorizationRead();
   authoritativeSourceAuthorizationReads.set(
     read,
     Object.freeze({
       configuration,
       applicationId: configuration.applicationId,
-      context: source.context,
-      policyVersion: source.context.policyVersion,
+      context,
+      policyVersion: context.policyVersion,
       policyDigest: source.policyDigest,
       scope: Object.freeze({ ...source.scope }),
       expiresAtMonotonicMs: readStartedAtMs + input.maximumLifetimeMs,
@@ -1232,6 +1243,49 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     expect(() => issue({ configuration: slowReadIssuer, source })).toThrow(
       "not enough source authorization lifetime",
     );
+  });
+
+  it("snapshots the access context at the authoritative source read", () => {
+    const mutablePermissions = ["support.queue.read"];
+    const mutableContext = {
+      principalId: "principal_original",
+      policyVersion: context.policyVersion,
+      roles: ["support"],
+      entitlements: ["plan.pro"],
+      permissions: mutablePermissions,
+    };
+    const snapshotIssuer = createIssuerConfiguration();
+    const authoritativeRead = performAuthoritativeSourceRead(snapshotIssuer, {
+      read: () => ({
+        context: mutableContext,
+        policyDigest: digest,
+        scope: { kind: "application" },
+      }),
+      maximumLifetimeMs: 60_000,
+    });
+
+    mutableContext.principalId = "principal_mutated";
+    mutableContext.policyVersion = "mutated-policy";
+    mutablePermissions.push("support.ticket.reply.any");
+    const source = bindSourceAuthorization(snapshotIssuer, authoritativeRead);
+    const claims = parseClaims(
+      issue({
+        configuration: snapshotIssuer,
+        requestedPermissions: ["support.queue.read"],
+        source,
+      }).claims,
+    );
+
+    expect(claims.sub).toBe("principal_original");
+    expect(claims.policy_version).toBe(context.policyVersion);
+    expect(claims.permissions).toEqual(["support.queue.read"]);
+    expect(() =>
+      issue({
+        configuration: snapshotIssuer,
+        requestedPermissions: ["support.ticket.reply.any"],
+        source,
+      }),
+    ).toThrow("outside an issuer allowlist");
   });
 
   it("permanently fails an issuer clock domain after any regression", () => {
