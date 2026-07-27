@@ -150,3 +150,6 @@ subjects or contexts. The bootstrap guide composes existing public ports but
 adds no runtime API. Its contract fixture and the in-memory adapter are
 single-process and non-durable; neither is evidence of production bootstrap or
 audit durability.
+
+See [Scoping](SCOPING.md) for the complete target-to-role-to-resource sequence
+and the [integration security model](SECURITY_MODEL.md) for deployment review.

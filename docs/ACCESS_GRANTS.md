@@ -411,3 +411,7 @@ V1 does not define or assert:
 The consuming service always performs its own authoritative resource and
 relationship checks after grant verification. A permission authorizes an
 attempted action; it is not proof about a particular resource.
+
+See [Scoping](SCOPING.md) for why V1 rejects organization-derived source
+authorization and the [integration security model](SECURITY_MODEL.md) for
+production key, logging, storage, and verifier obligations.

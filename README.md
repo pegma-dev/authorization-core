@@ -57,7 +57,40 @@ transaction on whatever backend the host supplies.
 and replay-consumption collections against host-supplied `Store` instances; it
 does not provide or select a persistence backend.
 
-## Example
+## Start here
+
+The [getting-started guide](docs/GETTING_STARTED.md) gives the complete
+integration order. The runnable [reference API](examples/reference-api/README.md)
+uses only public package entry points and demonstrates identity linking, fresh
+billing state, target-scoped roles, permission middleware, audited
+administration, safe logs, public JWKS, and one-use service grants:
+
+```sh
+npm ci
+npm run example
+```
+
+It is explicitly a non-production composition with synthetic provider inputs
+and ephemeral memory storage. No example implements Auth0 token verification,
+Stripe webhook handling, durable persistence, or production key custody.
+
+Integration documentation:
+
+- [Getting started](docs/GETTING_STARTED.md)
+- [Policy reference](docs/POLICY.md) and
+  [permission naming](docs/PERMISSIONS.md)
+- [Auth0](docs/AUTH0.md), [Stripe](docs/STRIPE.md), and
+  [adapter authoring](docs/ADAPTER_AUTHORING.md)
+- [Role assignments](docs/ROLE_ASSIGNMENTS.md),
+  [storage](docs/STORAGE.md), and
+  [administrator bootstrap](docs/ADMINISTRATOR_BOOTSTRAP.md)
+- [Application and organization scoping](docs/SCOPING.md)
+- [Migration from direct checks](docs/MIGRATION.md)
+- [Integration security model](docs/SECURITY_MODEL.md)
+- [Signed access grants](docs/ACCESS_GRANTS.md)
+- [Generated public API reference](docs/api/README.md)
+
+## Resolver example
 
 ```ts
 import {
@@ -313,6 +346,7 @@ npm ci
 npm run check
 npm test
 npm run format:check
+npm run docs:api:check
 ```
 
 See the [project plan](docs/PROJECT_PLAN.md) for scope, architecture, milestones,

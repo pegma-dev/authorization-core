@@ -221,3 +221,7 @@ Before shipping a permission change:
 Keep permission names boring, exact, and stable. Their value is that an
 application can audit one explicit action without depending on which identity
 provider, billing product, or staff-role implementation produced it.
+
+See [Scoping](SCOPING.md) for multi-application and target-derived organization
+selection, [Migration](MIGRATION.md) for replacing direct checks, and the
+[integration security model](SECURITY_MODEL.md) for deployment review.

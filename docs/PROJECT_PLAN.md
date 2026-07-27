@@ -2,8 +2,9 @@
 
 ## Status
 
-**Stage:** Phase 4 signed access grants complete
-(Foundation and Phases 1–4 complete; `0.x`, public API unstable)
+**Stage:** Phase 5 pre-release integration surface complete; first publication pending
+(Foundation and Phases 1–4 complete; Phase 5 documentation, API reference,
+and runnable example complete; `0.x`, public API unstable and unpublished)
 
 **Initial reference application:** RetireGolden
 
@@ -625,6 +626,34 @@ hosted product.
 - Document multi-application and multi-organization scoping.
 - Publish migration guidance from ad hoc role and plan checks.
 
+**Pre-release integration boundary (2026-07-27):** The repository now contains a
+clean-clone runnable Node reference API composed only through public package
+entry points. It demonstrates post-verification Auth0 projection and exact
+host identity linking, fresh principal-keyed Stripe state, authoritative
+target-derived organization selection, explicit application and exact-scope
+role reads, policy resolution, display-only `/access/me`, reusable allow and
+deny middleware, combined audited role grant/revoke administration, safe
+structured decision and audit logs, runtime-generated P-256 signing, public
+JWKS, application-scoped grant issuance, protected-module
+`verifyAndConsume`, and replay denial.
+
+The provider inputs and memory stores are prominently non-production. The
+example does not implement Auth0 verification, Stripe webhook processing,
+durable persistence, production key custody, or a hosted service. Production
+verifiers still require a fixed HTTPS JWKS endpoint; only the in-process demo
+and tests use the public tokens testing subpath for injected JWKS. V1 continues
+to reject organization-scoped grant sources.
+
+Dedicated [getting-started](GETTING_STARTED.md),
+[adapter-authoring](ADAPTER_AUTHORING.md), [migration](MIGRATION.md),
+[scoping](SCOPING.md), and [integration security](SECURITY_MODEL.md) guides
+cross-link the existing normative documents. A deterministic committed
+[public API reference](api/README.md) is generated from exactly the seven
+package entry points plus `@pegma/authorization-tokens/testing`; normal
+verification rejects drift. No package has been published, versioned, tagged,
+or released by this slice, so the publication item and Phase 5 exit criterion
+remain pending.
+
 **Exit criterion:** A new SaaS project can integrate identity, billing, staff
 roles, and one protected module using only public documentation.
 
@@ -699,15 +728,16 @@ administrator bootstrap, and signing-key compromise.
 
 Before the first public package release, a Phase 5 deliverable:
 
-- Getting-started guide
+- [Getting-started guide](GETTING_STARTED.md)
 - Policy reference
 - [Permission naming guide](PERMISSIONS.md)
 - Auth0 and Stripe integration guides
-- Adapter authoring guide
-- Security model
-- Migration guide from direct role and plan checks
-- API reference generated from source
-- Complete runnable example
+- [Adapter authoring guide](ADAPTER_AUTHORING.md)
+- [Security model](SECURITY_MODEL.md)
+- [Migration guide from direct role and plan checks](MIGRATION.md)
+- [Application and organization scoping guide](SCOPING.md)
+- [API reference generated from source](api/README.md)
+- [Complete runnable example](../examples/reference-api/README.md)
 
 ## Open questions
 
@@ -720,9 +750,8 @@ speculatively:
 
 ## Near-term backlog
 
-1. Prepare the Phase 5 pre-release documentation set, API reference generation,
-   and first runnable integration example that exercises the completed Phase 4
-   access-grant runtime.
+1. Review and publish the first public `0.x` package set with the completed
+   Phase 5 documentation, API reference, and runnable integration example.
 
 The backlog should stay small until the first integration reveals which
 abstractions are genuinely reusable.

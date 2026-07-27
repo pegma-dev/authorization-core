@@ -3,6 +3,10 @@
 Authorization software sits on a sensitive trust boundary. Please report
 suspected vulnerabilities privately.
 
+Application integrators should also follow the
+[integration security model](docs/SECURITY_MODEL.md). This file remains the
+vulnerability-reporting policy and detailed security expectations.
+
 ## Reporting a vulnerability
 
 Use

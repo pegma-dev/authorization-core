@@ -75,4 +75,6 @@ to the verified subject before translation. RetireGolden's separate account
 UUID remains the principal ID.
 
 See [Identity linking](IDENTITY_LINKING.md) for cardinality, linking, unlinking,
-and merge requirements.
+and merge requirements. Custom identity integrations should follow
+[Adapter authoring](ADAPTER_AUTHORING.md), and deployments should review the
+[integration security model](SECURITY_MODEL.md).
