@@ -63,7 +63,7 @@ Applications integrating Authorization Core remain responsible for:
 - enforcing the documented 60,000 millisecond absolute read-start lifetime for
   role-derived cached authorization, targeting invalidation delivery within
   5,000 milliseconds, and fencing stale in-flight fills;
-- when implementing signed access grants, preserving the source monotonic
+- when issuing signed access grants, preserving the source monotonic
   deadline, applying exact issuer/audience/policy allowlists, trusting keys only
   from the issuer-bound HTTPS JWKS endpoint, and atomically consuming each
   `(iss, application_id, aud, jti)` once;
@@ -160,6 +160,24 @@ Ordinary role, entitlement, or policy changes cannot recall an unconsumed
 grant; expiry, one-use consumption, and bounded JWKS refresh are the documented
 limits. Private signing material must remain host-controlled and absent from
 packages, browsers, logs, examples, and JWKS.
+
+`@pegma/authorization-tokens` accepts the signing key only as a host-owned
+private `CryptoKey`, projects only public P-256 coordinates into JWKS, and uses
+`jose` with an ES256-only allowlist. Its strict parser rejects duplicate or
+unknown JSON members and noncanonical compact segments before key lookup. The
+verifier exposes no verify-only path: a successful return means the exact
+replay tuple was inserted atomically into the declared
+`authorization_access_grant_replays` collection. The package never constructs
+a storage backend.
+
+Identifier generation uses the process CSPRNG, then atomically reserves every
+exact `(iss, application_id, jti)` in the separate declared
+`authorization_access_grant_jti_reservations` collection before signing.
+Reservations are retained indefinitely, so non-reuse remains exact across
+issuer instances, concurrency, and process restarts that share the host's
+durable `Store`. Reservation outage, ambiguity, conflict, or corrupt results
+deny issuance. Hosts must still preserve CSPRNG quality and never substitute a
+deterministic random source outside tests.
 
 The `@pegma/authorization-storage` in-memory adapter is a reference implementation for
 tests, examples, and contract evaluation. Its identity links are read-only

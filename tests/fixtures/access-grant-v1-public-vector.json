@@ -1,0 +1,30 @@
+{
+  "description": "Public-only ES256 access-grant V1 verification vector. No private key is included.",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "x": "yJKASGkLn2Eu30bDzof8d6uKoVtnzmDrFRceo-LQDok",
+        "y": "Pb6R1AX5c37-hNALMKvkqc33Jp62UvLxcaaYQ9sm0b8",
+        "crv": "P-256",
+        "use": "sig",
+        "alg": "ES256",
+        "kid": "vector-2026-07-26-public-001"
+      }
+    ]
+  },
+  "claims": {
+    "iss": "https://authorization.example.test",
+    "application_id": "pegma-production",
+    "aud": "support-api",
+    "sub": "principal-vector-001",
+    "exp": 2000000030,
+    "iat": 2000000000,
+    "jti": "uN5Kf6xVw2aY0dPcR8sE3gH1mQ9tL4zB7iJkOeWcX_A",
+    "profile_version": 1,
+    "policy_version": "2026-07-26.1",
+    "policy_digest": "sha256:ad1b38ea08c91e2e66d6ab4d2f19a70dee7c067ba3c3223a2728f5d2f74a17e3",
+    "permissions": ["support.queue.read", "support.ticket.reply.any"]
+  },
+  "compact": "eyJhbGciOiJFUzI1NiIsImtpZCI6InZlY3Rvci0yMDI2LTA3LTI2LXB1YmxpYy0wMDEiLCJ0eXAiOiJwZWdtYS1hY2Nlc3MtZ3JhbnQrand0In0.eyJpc3MiOiJodHRwczovL2F1dGhvcml6YXRpb24uZXhhbXBsZS50ZXN0IiwiYXBwbGljYXRpb25faWQiOiJwZWdtYS1wcm9kdWN0aW9uIiwiYXVkIjoic3VwcG9ydC1hcGkiLCJzdWIiOiJwcmluY2lwYWwtdmVjdG9yLTAwMSIsImV4cCI6MjAwMDAwMDAzMCwiaWF0IjoyMDAwMDAwMDAwLCJqdGkiOiJ1TjVLZjZ4VncyYVkwZFBjUjhzRTNnSDFtUTl0TDR6QjdpSmtPZVdjWF9BIiwicHJvZmlsZV92ZXJzaW9uIjoxLCJwb2xpY3lfdmVyc2lvbiI6IjIwMjYtMDctMjYuMSIsInBvbGljeV9kaWdlc3QiOiJzaGEyNTY6YWQxYjM4ZWEwOGM5MWUyZTY2ZDZhYjRkMmYxOWE3MGRlZTdjMDY3YmEzYzMyMjNhMjcyOGY1ZDJmNzRhMTdlMyIsInBlcm1pc3Npb25zIjpbInN1cHBvcnQucXVldWUucmVhZCIsInN1cHBvcnQudGlja2V0LnJlcGx5LmFueSJdfQ.57SYzZ6ImWbUdHT-87lTf5BkjmEn8JThXGjap45khsqClLA4aWMG-qSOPIxwifYs9Va-snjuqrAHRRoMA5bgrw"
+}
