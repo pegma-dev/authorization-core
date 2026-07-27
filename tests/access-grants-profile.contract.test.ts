@@ -1297,10 +1297,15 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
 
   it("owns unique identifier generation and fails closed on malformed or repeated output", () => {
     const callerChosenJti = base64Url32(99);
+    const callerOverrideIssuer = createIssuerConfiguration({
+      randomBytes32: () => new Uint8Array(32).fill(98),
+    });
     const issuerOwned = issue({
+      configuration: callerOverrideIssuer,
+      source: sourceAuthorization({ configuration: callerOverrideIssuer }),
       jti: callerChosenJti,
     } as Partial<IssueInput>);
-    expect(parseClaims(issuerOwned.claims).jti).not.toBe(callerChosenJti);
+    expect(parseClaims(issuerOwned.claims).jti).toBe(base64Url32(98));
 
     const malformedIssuer = createIssuerConfiguration({
       randomBytes32: () => new Uint8Array(31),
