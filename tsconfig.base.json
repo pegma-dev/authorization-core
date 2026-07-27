@@ -5,6 +5,7 @@
     "declarationMap": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
+    "inlineSources": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmitOnError": true,

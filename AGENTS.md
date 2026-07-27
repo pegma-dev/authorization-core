@@ -55,11 +55,14 @@ Work on a `claude/*` branch and open a pull request; `main` is protected by CI.
 The gate is `npm run format:check`, `npm run check`, `npm test` — all three must
 pass, and CI runs them on Node 22 and 24.
 
-Publishing is trusted-publisher only: no tokens exist. A release is
-`gh release create vX.Y.Z`, which runs the same gate and publishes every
-changed workspace package with a provenance attestation. A brand-new package
-cannot use trusted publishing for its first version and needs one manual
-`npm publish` plus a trusted-publisher configuration afterwards.
+Publishing is trusted-publisher only: no tokens exist. A release starts with a
+protected signed annotated `vX.Y.Z` tag, followed by
+`gh release create vX.Y.Z --verify-tag`; this runs the same gate and publishes
+the synchronized workspace package set with provenance attestations. A
+brand-new package cannot use trusted publishing for its first version. Follow
+`docs/RELEASING.md`: publish the exact prepared `0.0.0` tarballs once under the
+non-default `bootstrap` dist-tag, configure every package's trusted publisher,
+then make `0.1.0` the first advertised OIDC release.
 
 Nothing in this repository is published yet. The project plan holds that until
 Phase 5.

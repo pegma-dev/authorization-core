@@ -2,9 +2,10 @@
 
 ## Status
 
-**Stage:** Phase 5 pre-release integration surface complete; first publication pending
-(Foundation and Phases 1–4 complete; Phase 5 documentation, API reference,
-and runnable example complete; `0.x`, public API unstable and unpublished)
+**Stage:** Phase 5 pre-release integration and release bootstrap complete;
+first publication pending (Foundation and Phases 1–4 complete; Phase 5
+documentation, API reference, runnable example, and verified package-release
+path complete; `0.x`, public API unstable and unpublished)
 
 **Initial reference application:** RetireGolden
 
@@ -654,6 +655,27 @@ verification rejects drift. No package has been published, versioned, tagged,
 or released by this slice, so the publication item and Phase 5 exit criterion
 remain pending.
 
+**Release-bootstrap boundary (2026-07-27):** The repository now validates the
+exact seven-package inventory, common version, internal dependency versions,
+public metadata, lockfile, exports, package contents, and release tag before
+publication. CI packs each package once and installs the resulting tarballs in
+an isolated consumer under Node 22 and 24. The release workflow accepts stable
+GitHub releases only, checks out the exact tag, requires its commit to be on
+`origin/main`, prepares one contracts-first tarball set with a recorded commit
+and integrity manifest, and publishes through the protected `npm-publish`
+environment using pinned npm and OIDC provenance. A retry skips an immutable
+registry version only when its integrity is byte-for-byte identical to the
+prepared tarball; a different version payload fails closed.
+
+Because npm cannot configure trusted publishing before a package exists, the
+documented one-time ceremony publishes the reviewed `0.0.0` tarballs manually
+under the non-default `bootstrap` dist-tag, then configures trusted publishing
+for all seven packages. A later reviewed `0.1.0` version change and stable
+GitHub release is the first advertised release and the first publication
+through OIDC. This bootstrap slice does not publish a package, change a
+version, create a tag, or create a release, so Phase 5 remains pending. See
+[Release operations](RELEASING.md).
+
 **Exit criterion:** A new SaaS project can integrate identity, billing, staff
 roles, and one protected module using only public documentation.
 
@@ -750,8 +772,12 @@ speculatively:
 
 ## Near-term backlog
 
-1. Review and publish the first public `0.x` package set with the completed
-   Phase 5 documentation, API reference, and runnable integration example.
+1. Perform the documented one-time `0.0.0` non-default bootstrap publication
+   from the reviewed tarballs, configure npm trusted publishing for all seven
+   packages, and verify registry integrity.
+2. Review the synchronized `0.1.0` version and release notes, then create the
+   first stable GitHub release so OIDC publishes the first advertised package
+   set with provenance.
 
 The backlog should stay small until the first integration reveals which
 abstractions are genuinely reusable.

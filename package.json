@@ -5,6 +5,7 @@
   "description": "Provider-neutral roles, entitlements, and permissions for SaaS applications.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "npm@11.18.0",
   "engines": {
     "node": ">=22"
   },
@@ -21,6 +22,10 @@
     "example:serve": "npm run build && node examples/reference-api/dist/reference-integration.js --serve",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "release:check": "node scripts/release-packages.mjs check",
+    "release:pack": "node scripts/release-packages.mjs pack",
+    "release:publish": "node scripts/release-packages.mjs publish",
+    "release:registry:check": "node scripts/release-packages.mjs registry-check",
     "test": "npm run build && vitest run"
   },
   "devDependencies": {
