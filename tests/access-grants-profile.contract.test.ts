@@ -1282,10 +1282,13 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     );
 
     expect(bound).toBeDefined();
+    expect(Object.isFrozen(bound!.context)).toBe(true);
     expect(bound!.context.roles).toEqual(["support"]);
     expect(bound!.context.entitlements).toEqual(["plan.pro"]);
+    expect(bound!.context.permissions).toEqual(["support.queue.read"]);
     expect(Object.isFrozen(bound!.context.roles)).toBe(true);
     expect(Object.isFrozen(bound!.context.entitlements)).toBe(true);
+    expect(Object.isFrozen(bound!.context.permissions)).toBe(true);
     expect(claims.sub).toBe("principal_original");
     expect(claims.policy_version).toBe(context.policyVersion);
     expect(claims.permissions).toEqual(["support.queue.read"]);
