@@ -89,6 +89,7 @@ Integration documentation:
 - [Integration security model](docs/SECURITY_MODEL.md)
 - [Signed access grants](docs/ACCESS_GRANTS.md)
 - [Generated public API reference](docs/api/README.md)
+- [Release operations](docs/RELEASING.md) for maintainers
 
 ## Resolver example
 

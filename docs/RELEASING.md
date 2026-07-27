@@ -1,0 +1,227 @@
+# Release operations
+
+Authorization Core releases all seven public workspace packages at one common
+version. No package is published by merging a pull request. Publication is a
+separate operator action after review.
+
+The normal release path is a stable GitHub release. Its workflow uses npm
+trusted publishing and provenance, packs the release commit once, and publishes
+those exact tarballs in dependency order. The one-time `0.0.0` bootstrap below
+exists only because npm cannot configure a trusted publisher until each package
+name exists.
+
+## Release invariants
+
+The release tool fails before packing unless all of these remain true:
+
+- the public inventory is exactly contracts, Auth0, core, policy, Stripe,
+  storage, and tokens;
+- every root and workspace manifest has one stable semantic version;
+- every internal `@pegma/authorization-*` dependency uses that exact version;
+- the lockfile matches the manifests;
+- all workspaces are public MIT-licensed ESM packages for Node 22 or newer,
+  with the expected repository, files allowlist, and exports;
+- every package contains its own README and license;
+- packed exports can be imported from a clean consumer installation; and
+- packed source maps include their source.
+
+The prepared `package-manifest.json` records the exact Git commit, release tag
+when supplied, package order, tarball filename, SHA-1, SHA-512 integrity, and
+file inventory. Publication rechecks the event commit, tag, package order, and
+every tarball hash.
+
+## One-time package-name bootstrap
+
+Do this only once, after the release-bootstrap pull request is merged. Create a
+protected signed annotated Git tag for the audited bootstrap commit, but do not
+create a GitHub release for `0.0.0` and do not use the `latest` dist-tag. The
+bootstrap packages intentionally have no GitHub provenance; the signed tag is
+their durable source anchor. They exist only to permit trusted-publisher
+configuration. `0.1.0` will be the first advertised release.
+
+### 1. Prepare the reviewed bytes
+
+Use a clean checkout of the reviewed commit on `main`, with Node 24 and the
+reviewed npm version:
+
+```sh
+git fetch origin
+git switch --detach origin/main
+npm install --global npm@11.18.0
+npm ci
+npm run format:check
+npm run check
+npm test
+npm run release:pack -- --require-clean --require-main-ancestor --output .release
+npm run release:registry:check -- --manifest .release/package-manifest.json
+```
+
+Before the first publish, the registry check must report all seven versions as
+`absent`. Preserve the complete `.release` directory until the ceremony is
+finished. It is ignored by Git.
+
+### 2. Sign and protect the source tag
+
+Before pushing, ensure the repository's tag ruleset covers `v*`, restricts tag
+updates and deletions, and permits only the release maintainers to create a
+release tag. Release automation uses Git's SSH signature format and an explicit
+allowed-signers file, so configure the maintainer's approved SSH signing key
+before creating the signed annotated tag:
+
+```sh
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/pegma-release-signing-key
+git config gpg.ssh.allowedSignersFile ~/.config/pegma/release-allowed-signers
+git tag --sign v0.0.0 --message "Authorization Core bootstrap v0.0.0" HEAD
+git verify-tag v0.0.0
+git rev-parse HEAD
+git rev-parse "v0.0.0^{commit}"
+git push origin refs/tags/v0.0.0
+```
+
+The two commit IDs must equal each other and the `gitCommit` in
+`.release/package-manifest.json`. Verify the pushed tag from a fresh fetch.
+Never move, replace, or delete this tag; if any byte or metadata must change,
+prepare a new version.
+
+### 3. Publish under the non-default npm tag
+
+Authenticate the human npm operator using npm's current interactive login
+requirements. Publish only these prepared tarballs, in this order:
+
+```sh
+npm publish .release/pegma-authorization-contracts-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-auth0-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-core-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-policy-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-stripe-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-storage-0.0.0.tgz --access public --tag bootstrap
+npm publish .release/pegma-authorization-tokens-0.0.0.tgz --access public --tag bootstrap
+```
+
+Run the registry check after each command. An already-published package is safe
+to continue past only when it reports `exact`:
+
+```sh
+npm run release:registry:check -- --manifest .release/package-manifest.json
+```
+
+The check treats only npm `E404` as absent. It fails if an existing version has
+different integrity or if the registry lookup itself fails. Never unpublish and
+reuse a version; npm versions are immutable.
+
+If the workstation or connection fails partway through, keep or reconstruct the
+same clean checkout with Node 24 and npm 11.18.0, prepare the tarballs again,
+and run the registry check. Skip entries reported as `exact`, publish entries
+reported as `absent` in the listed order, and stop on any mismatch.
+
+### 4. Configure trusted publishing
+
+For each of the seven packages on npmjs.com, add this GitHub Actions trusted
+publisher:
+
+- organization or user: `pegma-dev`
+- repository: `authorization-core`
+- workflow: `publish.yml`
+- environment: `npm-publish`
+- allowed action: `npm publish` only
+
+The workflow name is relative to `.github/workflows`; do not enter a branch or
+tag. Trusted-publisher configuration can only be conclusively tested by a real
+publish, so verify every field twice.
+
+Create the `npm-publish` GitHub environment if it does not already exist.
+Protect it with at least one required maintainer approval and prevent the
+workflow initiator from self-approving. The environment name must match npm's
+publisher configuration. Do not add an npm token or an `NODE_AUTH_TOKEN`
+secret.
+
+Create the repository Actions variable `RELEASE_ALLOWED_SIGNERS`. Its value is
+the reviewed Git SSH allowed-signers content, with one approved principal and
+public key per line, for example:
+
+```text
+release-maintainer@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
+```
+
+This is public key material, not a secret. Keep the variable's administrative
+write access as narrow as tag and environment administration. The workflow
+writes it to a fresh runner-local file and configures
+`gpg.ssh.allowedSignersFile`; an absent variable, lightweight tag, unsigned tag,
+unlisted signer, or invalid signature fails before dependency installation.
+Test signer rotation with a disposable signed tag before removing an old key.
+
+Confirm that `bootstrap` is not the default npm dist-tag for any package. Leave
+the package names otherwise untouched until the `0.1.0` release.
+
+## First advertised release and later releases
+
+Prepare one pull request that:
+
+1. changes the root and all seven workspaces from `0.0.0` to `0.1.0`;
+2. changes every internal `@pegma/authorization-*` dependency to exact
+   `0.1.0`;
+3. regenerates the lockfile and confirms it has the same versions and ranges;
+4. adds reviewed release notes; and
+5. passes the normal gate and `npm run release:pack` under Node 22 and 24.
+
+External dependency versions are independent and must not be changed merely to
+match this repository's release.
+
+After that pull request is merged, identify the exact `origin/main` commit.
+With the same protected `v*` tag ruleset, create and push a signed annotated tag
+whose name exactly matches the manifests. Verify the pushed tag before creating
+the non-prerelease GitHub release:
+
+```sh
+git fetch origin
+git switch --detach origin/main
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/pegma-release-signing-key
+git config gpg.ssh.allowedSignersFile ~/.config/pegma/release-allowed-signers
+git tag --sign v0.1.0 --message "Authorization Core v0.1.0" HEAD
+git verify-tag v0.1.0
+git push origin refs/tags/v0.1.0
+git fetch origin tag v0.1.0 --force
+git verify-tag v0.1.0
+gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
+```
+
+The workflow's unprivileged preparation job checks out the fully qualified tag,
+requires an approved valid SSH-signed annotated tag, and proves that the tag
+target, checkout, and GitHub release-event commit are identical. It rejects
+prereleases, a tag/version mismatch, a tag commit not contained in
+`origin/main`, a dirty or inconsistent package set, or changed tarball bytes.
+That job uses Node 24.18.0 and npm 11.18.0, runs the full gate without OIDC
+publication authority, and uploads the prepared directory with a recorded
+artifact digest.
+
+Only the minimal protected `npm-publish` job receives `id-token: write`. It
+runs pinned checkout, Node setup, and artifact-download actions, installs no
+dependencies, uses the reviewed Node 24.18.0 runtime whose bundled npm supports
+trusted publishing (npm 11.5.1 or newer), rechecks the event commit, manifest
+tag, and tarball hashes, then publishes contracts first, followed by the four
+contracts-only consumers, storage, and tokens. The downloaded Actions artifact
+also fails on a transport digest mismatch.
+
+Do not let `gh release create` create a tag, and do not move or recreate a
+release tag. If a release needs different bytes, prepare a new version.
+
+## Workflow recovery
+
+The workflow is globally serialized. If it stops after publishing only part of
+the package set, rerun the failed jobs for the same GitHub release and unchanged
+tag. The prepared artifact name is stable across attempts and is retained for
+30 days, so the publisher reuses the verified tarballs from the same workflow
+run. A full rerun may replace that artifact with freshly prepared bytes from the
+same authenticated commit. Before each publish:
+
+- absent version: publish the prepared tarball;
+- existing version with identical `dist.integrity`: verify and skip it;
+- existing version with different integrity: stop without publishing later
+  packages; or
+- any registry error other than `E404`: stop.
+
+After a publish, the workflow waits for npm to expose the exact expected
+integrity before advancing. This makes a retry safe without making immutable
+npm versions appear replaceable.
