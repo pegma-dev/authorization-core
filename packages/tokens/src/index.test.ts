@@ -1135,8 +1135,10 @@ describe("@pegma/authorization-tokens JWKS", () => {
     await expect(cache.resolve(kid)).resolves.toBeDefined();
     now = 59_999;
     await expect(cache.resolve(kid)).resolves.toBeDefined();
+    expect(() => cache.assertActive()).not.toThrow();
     expect(fetches).toBe(1);
     now = 60_000;
+    expect(() => cache.assertActive()).toThrow("stale");
     await expect(cache.resolve(kid)).resolves.toBeDefined();
     expect(fetches).toBe(2);
 
@@ -1292,6 +1294,26 @@ describe("@pegma/authorization-tokens JWKS", () => {
     const configured = verifier(body, {
       store,
       jwksNow: () => samples.shift() ?? 101,
+    });
+
+    await expect(configured.verifyAndConsume(compact)).rejects.toThrow(
+      "access grant rejected",
+    );
+
+    const fresh = verifier(body, { store });
+    await expect(fresh.verifyAndConsume(compact)).resolves.toMatchObject({
+      principalId: "principal-001",
+    });
+  });
+
+  it("does not consume replay when JWKS cache age expires after verification", async () => {
+    const compact = await issue();
+    const body = await jwksBody();
+    const store = createMemoryStore();
+    const samples = [0, 60_000];
+    const configured = verifier(body, {
+      store,
+      jwksNow: () => samples.shift() ?? 60_001,
     });
 
     await expect(configured.verifyAndConsume(compact)).rejects.toThrow(

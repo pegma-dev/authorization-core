@@ -249,7 +249,14 @@ export class JwksCache {
   }
 
   assertActive(): void {
-    this.#sample();
+    const now = this.#sample();
+    if (
+      this.#keys === undefined ||
+      this.#loadedAtMs === undefined ||
+      now - this.#loadedAtMs >= this.#maxAgeMs
+    ) {
+      fail("JWKS cache is stale");
+    }
   }
 
   async resolve(kid: string): Promise<CryptoKey> {
