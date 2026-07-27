@@ -1,4 +1,11 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +85,8 @@ const packageEntryFiles = new Map(
 const outputDirectory = resolve(repositoryRoot, "docs/api");
 const checkOnly = process.argv.includes("--check");
 const sourceCache = new Map();
+const generatedPageOwnershipMarker =
+  "<!-- @pegma/authorization-core:generated-api-doc -->";
 
 function documentationFilename(packageName) {
   const filename = `${packageName
@@ -89,6 +98,61 @@ function documentationFilename(packageName) {
     );
   }
   return filename;
+}
+
+function outputTarget(filename) {
+  const target = resolve(outputDirectory, filename);
+  if (!target.startsWith(`${outputDirectory}${sep}`)) {
+    throw new Error(`generated API output escaped docs/api: ${filename}`);
+  }
+  return target;
+}
+
+async function requireRegularFileOrMissing(target) {
+  try {
+    const metadata = await lstat(target);
+    if (!metadata.isFile()) {
+      throw new Error(
+        `generated API path is not a regular file: ${relative(
+          repositoryRoot,
+          target,
+        )}`,
+      );
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+}
+
+async function unexpectedMarkdownFiles() {
+  let actual = [];
+  try {
+    actual = await readdir(outputDirectory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  const unexpected = [];
+  for (const entry of actual) {
+    if (!entry.name.endsWith(".md") || files.has(entry.name)) continue;
+    const target = outputTarget(entry.name);
+    if (!entry.isFile()) {
+      throw new Error(
+        `unexpected API documentation path is not a regular file: ${relative(
+          repositoryRoot,
+          target,
+        )}`,
+      );
+    }
+    await requireRegularFileOrMissing(target);
+    unexpected.push(target);
+  }
+  return unexpected;
+}
+
+function isGeneratedApiPage(content) {
+  return content.startsWith(`${generatedPageOwnershipMarker}\n`);
 }
 
 async function source(file) {
@@ -273,6 +337,8 @@ async function renderEntry(packageName, sourcePath) {
     );
   }
   return [
+    generatedPageOwnershipMarker,
+    "",
     `# ${packageName}`,
     "",
     `Generated from the public declaration entry point \`${sourcePath}\`. Internal modules are intentionally excluded.`,
@@ -287,6 +353,8 @@ files.set(
   "README.md",
   await prettier.format(
     [
+      generatedPageOwnershipMarker,
+      "",
       "# Public API reference",
       "",
       "This reference is generated deterministically from the repository's declared public package entry points. Run `npm run docs:api` to regenerate it and `npm run docs:api:check` to detect drift.",
@@ -334,10 +402,8 @@ for (const internalName of forbiddenInternalNames) {
 
 const drift = [];
 for (const [filename, content] of files) {
-  const target = resolve(outputDirectory, filename);
-  if (!target.startsWith(`${outputDirectory}${sep}`)) {
-    throw new Error(`generated API output escaped docs/api: ${filename}`);
-  }
+  const target = outputTarget(filename);
+  await requireRegularFileOrMissing(target);
   if (checkOnly) {
     let existing;
     try {
@@ -351,17 +417,18 @@ for (const [filename, content] of files) {
     await writeFile(target, content, "utf8");
   }
 }
-if (checkOnly) {
-  let actual = [];
-  try {
-    actual = (await readdir(outputDirectory)).filter((name) =>
-      name.endsWith(".md"),
-    );
-  } catch {
-    // Missing output is reported through each expected file above.
+
+const unexpected = await unexpectedMarkdownFiles();
+let removed = 0;
+for (const target of unexpected) {
+  if (checkOnly) {
+    drift.push(relative(repositoryRoot, target));
+    continue;
   }
-  for (const unexpected of actual.filter((name) => !files.has(name))) {
-    drift.push(relative(repositoryRoot, resolve(outputDirectory, unexpected)));
+  const content = await readFile(target, "utf8");
+  if (isGeneratedApiPage(content)) {
+    await unlink(target);
+    removed += 1;
   }
 }
 
@@ -375,5 +442,9 @@ if (checkOnly && drift.length > 0) {
 console.log(
   checkOnly
     ? `API documentation is current (${files.size} files).`
-    : `Generated ${files.size} API documentation files.`,
+    : `Generated ${files.size} API documentation files${
+        removed === 0
+          ? ""
+          : ` and removed ${removed} obsolete generated page(s)`
+      }.`,
 );

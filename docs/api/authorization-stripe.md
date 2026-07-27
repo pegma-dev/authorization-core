@@ -1,3 +1,5 @@
+<!-- @pegma/authorization-core:generated-api-doc -->
+
 # @pegma/authorization-stripe
 
 Generated from the public declaration entry point `packages/stripe/dist/index.d.ts`. Internal modules are intentionally excluded.

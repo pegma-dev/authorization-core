@@ -1,3 +1,5 @@
+<!-- @pegma/authorization-core:generated-api-doc -->
+
 # Public API reference
 
 This reference is generated deterministically from the repository's declared public package entry points. Run `npm run docs:api` to regenerate it and `npm run docs:api:check` to detect drift.

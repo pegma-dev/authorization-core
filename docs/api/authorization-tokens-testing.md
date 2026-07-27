@@ -1,3 +1,5 @@
+<!-- @pegma/authorization-core:generated-api-doc -->
+
 # @pegma/authorization-tokens/testing
 
 Generated from the public declaration entry point `packages/tokens/dist/testing.d.ts`. Internal modules are intentionally excluded.

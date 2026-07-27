@@ -1,3 +1,5 @@
+<!-- @pegma/authorization-core:generated-api-doc -->
+
 # @pegma/authorization-storage
 
 Generated from the public declaration entry point `packages/storage/dist/index.d.ts`. Internal modules are intentionally excluded.
