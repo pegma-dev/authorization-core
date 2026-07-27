@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   RELEASE_PACKAGES,
   decidePublication,
+  parseArguments,
   validateReleaseTag,
   validateRepository,
 } from "../scripts/release-packages.mjs";
@@ -21,6 +22,12 @@ function run(command: string, arguments_: string[], cwd?: string): string {
 }
 
 describe("release package metadata", () => {
+  it("accepts npm's cross-platform argument separator", () => {
+    expect(parseArguments(["--", "--output", ".release"])).toEqual({
+      output: ".release",
+    });
+  });
+
   it("keeps the exact contracts-first public package inventory", () => {
     expect(RELEASE_PACKAGES.map(({ name }) => name)).toEqual([
       "@pegma/authorization-contracts",
