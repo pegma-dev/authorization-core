@@ -389,7 +389,10 @@ export function createAccessGrantIssuerInternal<ReadRequest>(
           typ: ACCESS_GRANT_TYPE,
         })
         .sign(signingKey);
-      readGrantWindow(source);
+      const postSignWindow = readGrantWindow(source);
+      if (postSignWindow.iat >= exp) {
+        fail("access grant expired before issuance completed");
+      }
       return compact;
     },
   };

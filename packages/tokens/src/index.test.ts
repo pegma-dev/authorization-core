@@ -664,6 +664,50 @@ describe("@pegma/authorization-tokens issuer", () => {
       "domain has failed",
     );
   });
+
+  it("denies an issuance that expires while signing completes", async () => {
+    const monotonicSamples = [1_000, 2_000, 3_000, 34_000];
+    const wallSamples = [
+      issuedAt * 1_000,
+      issuedAt * 1_000,
+      (issuedAt + 30) * 1_000,
+    ];
+    const store = createMemoryStore();
+    const configured = createTestAccessGrantIssuer<void>(
+      {
+        issuer: issuerName,
+        applicationId,
+        kid,
+        signingKey: keys.privateKey,
+        audiences: { [audience]: [permission] },
+        acceptedPolicies: [{ version: policyVersion, digest: policyDigest }],
+        sourceReader: () => source(),
+      },
+      store,
+      {
+        monotonicNowMs: () => monotonicSamples.shift() ?? 35_000,
+        wallNowEpochMs: () => wallSamples.shift() ?? (issuedAt + 30) * 1_000,
+        randomBytes32: () => new Uint8Array(32).fill(53),
+      },
+    );
+    const read = await configured.readSourceAuthorization();
+    await expect(
+      configured.issue({
+        audience,
+        requestedPermissions: [permission],
+        source: configured.bindSourceAuthorization(read),
+      }),
+    ).rejects.toThrow("expired before issuance completed");
+
+    await expect(
+      issue(
+        issuerFixture({
+          store,
+          randomBytes32: () => new Uint8Array(32).fill(53),
+        }),
+      ),
+    ).rejects.toThrow("already reserved");
+  });
 });
 
 describe("@pegma/authorization-tokens verifier", () => {
