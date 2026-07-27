@@ -1,8 +1,9 @@
 # The Entra adapter: `@pegma/authorization-entra`
 
 Decided 2026-07-27 as a plan; implementation is deliberately deferred (see
-Timing). This is the assignment record for a Microsoft Entra ID identity
-adapter, modeled on `packages/auth0`.
+Timing). This is the decision record for a Microsoft Entra ID identity
+adapter, modeled on `packages/auth0`. ("Decision record", not "assignment
+record" — in this repository an assignment is a role assignment.)
 
 ## Why
 
@@ -39,11 +40,20 @@ Entra's claims do not map naively onto Auth0's:
   documented, is worth more to an agent-assembled host than an option; a
   host that genuinely wants pairwise isolation is choosing fragmentation
   and can project its own key without this package.
-- The tenant-specific `iss` (`https://login.microsoftonline.com/{tid}/v2.0`)
-  slots into issuer-namespacing unchanged: B2B guests carry a resource-
-  tenant `oid`, multi-tenant apps see one issuer per tenant, and Entra
-  External ID (consumer CIAM) speaks the same protocol. All arrive as
-  distinct, honest tuples with no special cases.
+- **One issuer profile: v2 only.** Entra can issue the same tenant + `oid`
+  under two valid issuer formats — v1 (`https://sts.windows.net/{tid}/`)
+  and v2 (`https://login.microsoftonline.com/{tid}/v2.0`) — and exact
+  tuple comparison would split one human across them, recreating the very
+  fragmentation this decision exists to prevent. The adapter accepts the
+  v2 issuer format ONLY and rejects v1 issuers loudly; a host still on v1
+  tokens migrates first. Deliberately no silent v1→v2 canonicalization:
+  rewriting an issuer is rewriting an identity, and a projection that
+  edits its inputs is no longer honest.
+- With that pinned, the tenant-specific v2 `iss` slots into
+  issuer-namespacing unchanged: B2B guests carry a resource-tenant `oid`,
+  multi-tenant apps see one issuer per tenant, and Entra External ID
+  (consumer CIAM) speaks the same protocol. All arrive as distinct, honest
+  tuples with no special cases.
 - Reject a missing/blank `oid` loudly (same posture as the Auth0 adapter's
   claim validation). Never touch `email`/`preferred_username` — the core
   invariant (email is not an authorization key) already forbids it, and
