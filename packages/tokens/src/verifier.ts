@@ -276,6 +276,7 @@ export function createAccessGrantVerifierInternal(
           fail("access grant is not accepted by this verifier");
         }
 
+        jwks.assertActive();
         requireGrantTimeWindow(claims);
 
         await replay.consume({
@@ -285,6 +286,7 @@ export function createAccessGrantVerifierInternal(
           jti: claims.jti,
           retainThrough: claims.exp + MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS,
         });
+        jwks.assertActive();
         requireGrantTimeWindow(claims);
 
         return Object.freeze({

@@ -248,6 +248,10 @@ export class JwksCache {
     this.#maxAgeMs = Math.min(this.#maxAgeMs, maxAgeMs);
   }
 
+  assertActive(): void {
+    this.#sample();
+  }
+
   async resolve(kid: string): Promise<CryptoKey> {
     const now = this.#sample();
     const fresh =

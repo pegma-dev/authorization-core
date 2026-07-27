@@ -1284,6 +1284,26 @@ describe("@pegma/authorization-tokens JWKS", () => {
     });
   });
 
+  it("does not consume replay when the JWKS clock regresses after verification", async () => {
+    const compact = await issue();
+    const body = await jwksBody();
+    const store = createMemoryStore();
+    const samples = [100, 99];
+    const configured = verifier(body, {
+      store,
+      jwksNow: () => samples.shift() ?? 101,
+    });
+
+    await expect(configured.verifyAndConsume(compact)).rejects.toThrow(
+      "access grant rejected",
+    );
+
+    const fresh = verifier(body, { store });
+    await expect(fresh.verifyAndConsume(compact)).resolves.toMatchObject({
+      principalId: "principal-001",
+    });
+  });
+
   it("starts unknown-kid cooldown before failed initial and stale refreshes", async () => {
     let now = 0;
     let initialFetches = 0;
