@@ -697,7 +697,6 @@ roles, and one protected module using only public documentation.
 - Publish adapter conformance tests.
 - Complete an external security review or focused authorization audit.
 - Document semantic-versioning and deprecation policy.
-- Add signing and provenance to the npm release process.
 - Release `1.0.0` only after the contracts survive multiple consumers.
 
 ## RetireGolden integration sequence
