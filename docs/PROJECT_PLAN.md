@@ -2,8 +2,9 @@
 
 ## Status
 
-**Stage:** Phase 3 complete; preparing Phase 4 signed access grants
-(Foundation and Phases 1–3 complete; `0.x`, public API unstable)
+**Stage:** Phase 4 signed access-grant profile specified; implementation pending
+(Foundation and Phases 1–3 complete; Phase 4 decision slice complete; `0.x`,
+public API unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -349,9 +350,11 @@ to a target in another. Server-side resource and relationship checks remain
 authoritative: an access context is never proof of organization membership,
 resource ownership, assignment, or another relationship. Tenant and
 organization IDs are instance data and do not belong in permission names. A
-possible Phase 4 organization-confinement claim remains a separate future
-token-profile decision with explicit issuer and verification semantics; it is
-not inherited from the core context.
+Phase 4 subsequently kept organization confinement out of V1 entirely:
+application-scoped grants cannot include permissions derived from
+organization-scoped assignments. Any future confinement design remains a
+separately versioned profile with explicit issuer and verification semantics;
+it is not inherited from the core context.
 
 The RetireGolden evidence supports that boundary without claiming a live
 Authorization Core integration. Its current commercial model has one principal,
@@ -543,16 +546,50 @@ with an auditable history.
 
 **Goal:** Let independently deployed modules consume access safely.
 
-- Define a short-lived access-grant JWT profile.
-- Use an application-controlled signing key and published JWKS.
-- Require issuer, audience, expiration, policy version, and principal ID.
-- Treat any organization-confinement claim as a separate token-profile
-  decision with explicit issuer and verification semantics; do not inherit
-  confinement from the core access context.
-- Document key rotation and token revocation limits.
-- Add verification libraries and cross-language test vectors.
-- Keep browser sessions and offline commercial licenses outside this token
-  profile.
+- [x] Define a short-lived access-grant JWT profile.
+- [ ] Use an application-controlled signing key and published JWKS.
+- [x] Require issuer, audience, expiration, exact policy version and digest,
+      principal ID, token kind, profile version, effective permissions, and a
+      unique one-use identifier.
+- [x] Complete the V1 organization-confinement decision: omit organization
+      claims and reject organization-scoped source authorization, leaving any
+      confinement design to a separate future profile.
+- [x] Document key rotation, replay prevention, and token revocation limits.
+- [ ] Add verification libraries and cross-language test vectors.
+- [x] Keep browser sessions and offline commercial licenses outside this token
+      profile.
+
+**Implemented boundary (2026-07-26):** The normative
+[Pegma access-grant profile V1](ACCESS_GRANTS.md) fixes a separated
+`pegma-access-grant+jwt` kind, ES256, exact issuer and one-service audience,
+exact provider-neutral host application identity, host principal, integer
+issuance and expiry times, collision-resistant one-use ID, profile version,
+exact accepted policy-version-and-digest pair, and a canonical nonempty
+audience-allowlisted subset of effective permissions. Roles, entitlements,
+provider facts, serialized access contexts, and organization claims are
+excluded. V1 accepts only application-scoped source authorization; a future
+organization-confinement profile would require authoritative target-derived
+scope and exact verifier binding without replacing membership or resource
+checks.
+
+Issuance has a 30-second nominal maximum and reserves the verifier's complete
+five-second maximum negative clock offset inside the source monotonic deadline,
+with zero positive expiration leeway, so it shortens and never restarts the
+existing 60-second role-authorization bound. Verification requires fixed
+issuer-bound HTTPS JWKS configuration, strict header/claim/key shapes, exact
+policy-pair allowlisting, a replace-only public-key cache no older than 60
+seconds, terminal monotonic-regression guards, bounded issuer-scoped unknown-key
+refresh, and atomic one-time consumption keyed by
+`(iss, application_id, aud, jti)`.
+
+The root contract test mechanizes only the non-cryptographic claim,
+opaque-source-capability, guarded-clock, lifetime, replay-state, canonical
+base64url, and key-cache decisions within one deterministic process. Real
+compact JWS parsing, ES256 signing and verification, complete JWKS document and
+redirect validation, production multi-instance atomic consumption, production
+clock quality, and cross-language vectors remain future implementation work.
+The token package, published JWKS, JOSE dependency, and persistence
+implementation remain unimplemented.
 
 **Exit criterion:** A support module can verify a narrowly scoped access grant
 without querying Auth0 or Stripe.
@@ -661,14 +698,14 @@ speculatively:
 
 - Whether policy needs explicit deny rules
 - Whether hierarchical roles provide enough value to justify their risk
-- Whether access grants should carry permissions, grants, or both (to be
-  decided at the start of Phase 4)
 - When a standalone access service becomes operationally worthwhile
 
 ## Near-term backlog
 
-1. Decide whether signed access grants carry permissions, grants, or both, then
-   specify lifetime, key rotation, and revocation behavior.
+1. Implement the V1 signer, verifier, host-supplied one-use consumption over a
+   declared collection in an `@pegma/storage-core` `Store`, and JWKS publication
+   surface from `docs/ACCESS_GRANTS.md`, then add cryptographic and
+   cross-language test vectors.
 
 The backlog should stay small until the first integration reveals which
 abstractions are genuinely reusable.
