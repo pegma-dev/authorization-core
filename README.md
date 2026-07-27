@@ -51,8 +51,9 @@ Application roles ──┘
 
 Storage declares its collections against a `@pegma/storage-core` `Store`, so
 the assignment-and-audit transaction boundary closes in one single-partition
-transaction on whatever backend the host supplies. Signed-token adapters remain
-planned and are not stubbed before their contracts are validated.
+transaction on whatever backend the host supplies. The Phase 4 signed
+access-grant profile is now specified, but its package remains uncreated until
+implementation begins.
 
 ## Example
 
@@ -134,6 +135,22 @@ immutable snapshots. Expiry, invalid or regressing clock state, refresh
 failure, and stale in-flight fills fail closed; a clock anomaly permanently
 retires that shared domain for caches and composed decisions. See
 [Fast role revocation and cache bounds](docs/ROLE_REVOCATION.md).
+
+The [Pegma access-grant V1 profile](docs/ACCESS_GRANTS.md) specifies a
+short-lived, one-use service credential without adding a runtime package yet.
+It carries only a canonical nonempty audience-allowlisted subset of effective
+permissions, plus exact issuer, one service audience, host principal, lifetime,
+policy version and digest, exact provider-neutral host application identity,
+and profile metadata. It never carries roles, entitlements, provider
+identities, or a serialized access context. V1 is application-scoped and has no
+organization claim; organization-derived permissions require a future
+separately confined profile. ES256 verification uses only a fixed issuer-bound
+HTTPS JWKS endpoint, and atomic consumption of
+`(iss, application_id, aud, jti)` occurs after every other verification
+succeeds and before any protected action, preventing reuse after the first
+successful request. The 30-second nominal lifetime reserves a maximum
+five-second negative verifier clock offset inside the source monotonic
+authorization deadline and permits no positive expiration leeway.
 
 `resolveAccessWithDiagnostics` is an opt-in observability API. It returns the
 same access context as `resolveAccess` plus canonical lists of unknown subject

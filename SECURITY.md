@@ -63,6 +63,10 @@ Applications integrating Authorization Core remain responsible for:
 - enforcing the documented 60,000 millisecond absolute read-start lifetime for
   role-derived cached authorization, targeting invalidation delivery within
   5,000 milliseconds, and fencing stale in-flight fills;
+- when implementing signed access grants, preserving the source monotonic
+  deadline, applying exact issuer/audience/policy allowlists, trusting keys only
+  from the issuer-bound HTTPS JWKS endpoint, and atomically consuming each
+  `(iss, application_id, aud, jti)` once;
 - protecting signing keys and service credentials.
 
 Authorization Core does not make browser-provided roles or entitlements trustworthy.
@@ -122,10 +126,40 @@ invalid or regressing-clock, or generation-invalidated reads fail closed
 without stale fallback. See
 [Fast role revocation and cache bounds](docs/ROLE_REVOCATION.md).
 
-If a future Phase 4 signed access-grant profile carries organization
-confinement, that will be a separate token-profile decision with explicit
-issuer and verifier semantics. Core access contexts do not supply or imply
-such confinement.
+The Phase 4
+[Pegma access-grant V1 profile](docs/ACCESS_GRANTS.md) carries only effective
+permissions. It excludes roles, entitlements, provider identities, serialized
+access contexts, and organization claims. A V1 issuer accepts only
+application-scoped source authorization and rejects permissions derived from
+organization-scoped role assignments. Any future organization-confinement
+profile must receive scope from authoritative target-derived host facts,
+require exact comparison with the verifier's target, and preserve current
+membership and resource checks; core access contexts do not supply or imply
+that confinement.
+
+V1 access grants are bearer credentials before first consumption. A
+collision-resistant `jti` is not sufficient by itself: after signature, claim,
+policy, audience, and lifetime verification, the service must atomically
+consume the exact `(iss, application_id, aud, jti)` tuple and retain it through
+`exp` plus the maximum negative verifier offset, before any protected action.
+Concurrent use has one winner, and replay-store outage, ambiguous write, or
+corruption fails closed. The signed `application_id` is a provider-neutral
+exact host application identity and must match immutable verifier
+configuration. Issuance reserves that complete five-second negative offset
+inside the original monotonic authorization deadline and never restarts that
+deadline; verification rejects at `exp` with zero positive expiration leeway.
+The issuer accepts only an opaque host-created source capability from its exact
+guarded clock domain; clock regression permanently fails that domain.
+Verifiers accept only ES256 public keys from their fixed issuer-bound HTTPS
+JWKS URL, replace rather than union refreshed key sets, share one issuer-scoped
+in-flight refresh, and rate-limit unknown-`kid` refreshes with bounded
+issuer-wide negative-miss state. Their cache clock guard compares every sample
+with the last observed sample and fails terminally on regression. They never
+use token `jku`, `jwk`, or `x5u` input.
+Ordinary role, entitlement, or policy changes cannot recall an unconsumed
+grant; expiry, one-use consumption, and bounded JWKS refresh are the documented
+limits. Private signing material must remain host-controlled and absent from
+packages, browsers, logs, examples, and JWKS.
 
 The `@pegma/authorization-storage` in-memory adapter is a reference implementation for
 tests, examples, and contract evaluation. Its identity links are read-only

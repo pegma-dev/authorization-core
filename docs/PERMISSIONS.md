@@ -127,10 +127,12 @@ ownership, assignment, or another relationship. The server remains
 authoritative: it must load the requested resource and enforce those
 relationships before returning or mutating it.
 
-A future Phase 4 signed access-grant profile could separately define an
-organization-confinement claim. Such a claim would need its own issuer and
-verification semantics; it is not inherited from, supplied by, or implied by
-the core access context.
+The Phase 4 V1 signed access-grant profile has no organization-confinement
+claim and cannot use permissions derived from organization-scoped role
+assignments. Any future confinement design requires a separately versioned
+profile with authoritative target-derived issuer facts and exact verifier
+binding; it is not inherited from, supplied by, or implied by the core access
+context.
 
 ## Compatibility of permission and policy changes
 
