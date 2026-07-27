@@ -136,10 +136,15 @@ tag. Trusted-publisher configuration can only be conclusively tested by a real
 publish, so verify every field twice.
 
 Create the `npm-publish` GitHub environment if it does not already exist.
-Protect it with at least one required maintainer approval and prevent the
-workflow initiator from self-approving. The environment name must match npm's
-publisher configuration. Do not add an npm token or an `NODE_AUTH_TOKEN`
-secret.
+The environment name must match npm's publisher configuration. In an
+organization with multiple independent release maintainers, protect it with a
+required approval and prevent the workflow initiator from self-approving. A
+single-maintainer organization cannot provide an independent approval and must
+not add a second account solely to simulate one; leave required reviewers
+unset until another independent maintainer exists. The signed protected tag,
+approved-signer check, exact artifact verification, and environment-scoped OIDC
+identity remain the release controls. Do not add an npm token or a
+`NODE_AUTH_TOKEN` secret.
 
 Create the repository Actions variable `RELEASE_ALLOWED_SIGNERS`. Its value is
 the reviewed Git SSH allowed-signers content, with one approved principal and
