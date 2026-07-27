@@ -32,6 +32,11 @@ every tarball hash.
 
 ## One-time package-name bootstrap
 
+Completed on 2026-07-27. All seven `0.0.0` packages were published under the
+non-default `bootstrap` dist-tag and configured for trusted publishing. Do not
+repeat this ceremony or promote `0.0.0` to `latest`; the instructions remain
+below only as the recovery and audit record.
+
 Do this only once, after the release-bootstrap pull request is merged. Create a
 protected signed annotated Git tag for the audited bootstrap commit, but do not
 create a GitHub release for `0.0.0` and do not use the `latest` dist-tag. The
@@ -52,8 +57,8 @@ npm ci
 npm run format:check
 npm run check
 npm test
-npm run release:pack -- --require-clean --require-main-ancestor --output .release
-npm run release:registry:check -- --manifest .release/package-manifest.json
+npm run release:pack -- -- --require-clean --require-main-ancestor --output .release
+npm run release:registry:check -- -- --manifest .release/package-manifest.json
 ```
 
 Before the first publish, the registry check must report all seven versions as
@@ -103,7 +108,7 @@ Run the registry check after each command. An already-published package is safe
 to continue past only when it reports `exact`:
 
 ```sh
-npm run release:registry:check -- --manifest .release/package-manifest.json
+npm run release:registry:check -- -- --manifest .release/package-manifest.json
 ```
 
 The check treats only npm `E404` as absent. It fails if an existing version has
@@ -156,7 +161,7 @@ the package names otherwise untouched until the `0.1.0` release.
 
 ## First advertised release and later releases
 
-Prepare one pull request that:
+The `0.1.0` release pull request:
 
 1. changes the root and all seven workspaces from `0.0.0` to `0.1.0`;
 2. changes every internal `@pegma/authorization-*` dependency to exact

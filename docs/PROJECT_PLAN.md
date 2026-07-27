@@ -2,10 +2,10 @@
 
 ## Status
 
-**Stage:** Phase 5 pre-release integration and release bootstrap complete;
-first publication pending (Foundation and Phases 1–4 complete; Phase 5
-documentation, API reference, runnable example, and verified package-release
-path complete; `0.x`, public API unstable and unpublished)
+**Stage:** Phase 5 first advertised release candidate (Foundation and Phases
+1–4 complete; Phase 5 documentation, API reference, runnable example, and
+verified package-release path complete; the non-default `0.0.0` package-name
+bootstrap is published; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -733,7 +733,8 @@ administrator bootstrap, and signing-key compromise.
 ## Compatibility and release strategy
 
 - Packages publish under the `@pegma` npm organization, registered on
-  2026-07-26. Nothing is published until the Phase 5 release.
+  2026-07-26. The non-default `0.0.0` package-name bootstrap was published on
+  2026-07-27; `0.1.0` is the first advertised release.
 - All packages begin at `0.x`; breaking changes may occur with clear release
   notes.
 - Packages in this repository release together until their contracts stabilize.
@@ -772,10 +773,7 @@ speculatively:
 
 ## Near-term backlog
 
-1. Perform the documented one-time `0.0.0` non-default bootstrap publication
-   from the reviewed tarballs, configure npm trusted publishing for all seven
-   packages, and verify registry integrity.
-2. Review the synchronized `0.1.0` version and release notes, then create the
+1. Review the synchronized `0.1.0` version and release notes, then create the
    first stable GitHub release so OIDC publishes the first advertised package
    set with provenance.
 

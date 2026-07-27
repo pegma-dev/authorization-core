@@ -196,9 +196,9 @@ Authorization Core uses separate version concepts:
 - Package versions describe the npm APIs. They do not order policy revisions or
   alter a policy document's schema.
 
-The packages remain unpublished `0.x` software, so public API stability and a
-formal deprecation policy are not promised yet. Hosts should still make
-permission vocabulary changes explicit and staged because application data and
+The packages remain `0.x` software, so public API stability and a formal
+deprecation policy are not promised yet. Hosts should still make permission
+vocabulary changes explicit and staged because application data and
 independently deployed consumers can outlive a package upgrade.
 
 ## Change checklist

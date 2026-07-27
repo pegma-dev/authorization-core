@@ -71,7 +71,7 @@ jobs:
         run: npm test
 
       - name: Prepare and verify release tarballs
-        run: npm run release:pack -- --require-clean --require-main-ancestor --require-release-tag --expected-release-commit "${RELEASE_COMMIT}" --output .release
+        run: npm run release:pack -- -- --require-clean --require-main-ancestor --require-release-tag --expected-release-commit "${RELEASE_COMMIT}" --output .release
 
       - name: Upload the prepared release
         id: upload
@@ -119,4 +119,4 @@ jobs:
           path: .release
 
       - name: Publish prepared tarballs
-        run: npm run release:publish -- --expected-release-commit "${RELEASE_COMMIT}" --manifest .release/package-manifest.json
+        run: npm run release:publish -- -- --expected-release-commit "${RELEASE_COMMIT}" --manifest .release/package-manifest.json

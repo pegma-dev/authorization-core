@@ -35,17 +35,17 @@ describe("release package metadata", () => {
 
   it("validates the repository, package manifests, and lockfile together", async () => {
     await expect(validateRepository()).resolves.toMatchObject({
-      version: "0.0.0",
+      version: "0.1.0",
     });
   });
 
   it("requires a stable release tag that exactly matches the common version", async () => {
-    await expect(validateRepository({ releaseTag: "v0.0.1" })).rejects.toThrow(
-      "release tag must be v0.0.0",
+    await expect(validateRepository({ releaseTag: "v0.1.1" })).rejects.toThrow(
+      "release tag must be v0.1.0",
     );
     await expect(
       validateRepository({
-        releaseTag: "v0.0.0",
+        releaseTag: "v0.1.0",
         releasePrerelease: true,
       }),
     ).rejects.toThrow("prereleases cannot publish packages");

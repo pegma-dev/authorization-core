@@ -50,4 +50,4 @@ jobs:
         run: npm test
 
       - name: Pack and smoke-test public packages
-        run: npm run release:pack -- --output .release-smoke
+        run: npm run release:pack -- -- --output .release-smoke

@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Pure role and entitlement permission resolution for Authorization Core.",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "directory": "packages/core"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.0.0"
+    "@pegma/authorization-contracts": "0.1.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
