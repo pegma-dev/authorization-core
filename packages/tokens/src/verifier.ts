@@ -232,6 +232,20 @@ export function createAccessGrantVerifierInternal(
     fetcher: fetchJwks,
   });
   const replay = createReplayConsumer(store, replayStoreNowEpochMs);
+  const requireGrantTimeWindow = (claims: ParsedGrant["claims"]): void => {
+    const wallNow = verifierWallNowEpochMs();
+    if (!Number.isFinite(wallNow) || wallNow < 0) {
+      fail("verifier wall clock is invalid");
+    }
+    const now = Math.floor(wallNow / 1_000);
+    if (
+      !Number.isSafeInteger(now) ||
+      claims.iat > now + MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS ||
+      now >= claims.exp
+    ) {
+      fail("access grant is outside its time window");
+    }
+  };
 
   return Object.freeze({
     async verifyAndConsume(compact: string): Promise<VerifiedAccessGrant> {
@@ -262,18 +276,7 @@ export function createAccessGrantVerifierInternal(
           fail("access grant is not accepted by this verifier");
         }
 
-        const wallNow = verifierWallNowEpochMs();
-        if (!Number.isFinite(wallNow) || wallNow < 0) {
-          fail("verifier wall clock is invalid");
-        }
-        const now = Math.floor(wallNow / 1_000);
-        if (
-          !Number.isSafeInteger(now) ||
-          claims.iat > now + MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS ||
-          now >= claims.exp
-        ) {
-          fail("access grant is outside its time window");
-        }
+        requireGrantTimeWindow(claims);
 
         await replay.consume({
           issuer: claims.iss,
@@ -282,6 +285,7 @@ export function createAccessGrantVerifierInternal(
           jti: claims.jti,
           retainThrough: claims.exp + MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS,
         });
+        requireGrantTimeWindow(claims);
 
         return Object.freeze({
           issuer: claims.iss,

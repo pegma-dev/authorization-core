@@ -246,6 +246,44 @@ function faultingReplayStore(mode: ReplayFault): {
   return { store, insertCalls: () => calls };
 }
 
+function pausingReplayStore(): {
+  readonly store: Store;
+  readonly entered: Promise<void>;
+  readonly release: () => void;
+} {
+  const memory = createMemoryStore();
+  let enter!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const store: Store = {
+    collection<T>(definition: CollectionDefinition<T>): CollectionStore<T> {
+      const collection = memory.collection(definition);
+      if (definition.name !== accessGrantReplays.name) {
+        return collection;
+      }
+      return new Proxy(collection, {
+        get(target, property, receiver) {
+          if (property === "insertIfAbsent") {
+            return async (value: T) => {
+              enter();
+              await released;
+              return target.insertIfAbsent(value);
+            };
+          }
+          const member = Reflect.get(target, property, receiver) as unknown;
+          return typeof member === "function" ? member.bind(target) : member;
+        },
+      });
+    },
+  };
+  return { store, entered, release };
+}
+
 type ReservationFault = "outage" | "commit-then-throw";
 
 function faultingReservationStore(mode: ReservationFault): {
@@ -883,6 +921,31 @@ describe("@pegma/authorization-tokens verifier", () => {
       name: "AccessGrantError",
       message: "access grant rejected",
     });
+  });
+
+  it("denies a grant that expires while replay consumption is in flight", async () => {
+    const compact = await issue(issuerFixture(), [permission]);
+    const body = await jwksBody();
+    const replay = pausingReplayStore();
+    const verifierOptions = {
+      store: replay.store,
+      verifierNowMs: issuedAt * 1_000,
+      replayNowMs: issuedAt * 1_000,
+    };
+    const configured = verifier(body, verifierOptions);
+    const inFlight = configured.verifyAndConsume(compact);
+
+    await replay.entered;
+    verifierOptions.verifierNowMs = (issuedAt + 30) * 1_000;
+    replay.release();
+    await expect(inFlight).rejects.toThrow("access grant rejected");
+    await expect(
+      verifier(body, {
+        store: replay.store,
+        verifierNowMs: issuedAt * 1_000,
+        replayNowMs: issuedAt * 1_000,
+      }).verifyAndConsume(compact),
+    ).rejects.toThrow("access grant rejected");
   });
 });
 
