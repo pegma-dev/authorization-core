@@ -64,8 +64,9 @@ brand-new package cannot use trusted publishing for its first version. Follow
 non-default `bootstrap` dist-tag, configure every package's trusted publisher,
 then make `0.1.0` the first advertised OIDC release.
 
-Nothing in this repository is published yet. The project plan holds that until
-Phase 5.
+The one-time `0.0.0` package-name bootstrap is published under the non-default
+`bootstrap` dist-tag, and trusted publishing is configured. `0.1.0` is the
+first advertised release.
 
 ## Where things stand
 

@@ -749,10 +749,13 @@ export async function inspectPreparedRegistry(options = {}) {
   return states;
 }
 
-function parseArguments(arguments_) {
+export function parseArguments(arguments_) {
   const options = {};
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
+    if (argument === "--") {
+      continue;
+    }
     if (argument === "--require-main-ancestor") {
       options.requireMainAncestor = true;
       continue;

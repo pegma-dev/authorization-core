@@ -15,7 +15,16 @@ export interface ValidationOptions {
   readonly requireReleaseTag?: boolean;
 }
 
+export interface ReleaseCommandOptions extends ValidationOptions {
+  readonly manifest?: string;
+  readonly output?: string;
+}
+
 export const RELEASE_PACKAGES: readonly ReleasePackageDefinition[];
+
+export function parseArguments(
+  arguments_: readonly string[],
+): ReleaseCommandOptions;
 
 export function validateRepository(
   options?: ValidationOptions,
