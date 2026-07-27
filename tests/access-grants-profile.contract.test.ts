@@ -1246,12 +1246,14 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
   });
 
   it("snapshots the access context at the authoritative source read", () => {
+    const mutableRoles = ["support"];
+    const mutableEntitlements = ["plan.pro"];
     const mutablePermissions = ["support.queue.read"];
     const mutableContext = {
       principalId: "principal_original",
       policyVersion: context.policyVersion,
-      roles: ["support"],
-      entitlements: ["plan.pro"],
+      roles: mutableRoles,
+      entitlements: mutableEntitlements,
       permissions: mutablePermissions,
     };
     const snapshotIssuer = createIssuerConfiguration();
@@ -1266,8 +1268,11 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
 
     mutableContext.principalId = "principal_mutated";
     mutableContext.policyVersion = "mutated-policy";
+    mutableRoles.push("administrator");
+    mutableEntitlements.push("plan.enterprise");
     mutablePermissions.push("support.ticket.reply.any");
     const source = bindSourceAuthorization(snapshotIssuer, authoritativeRead);
+    const bound = boundSourceAuthorizations.get(source);
     const claims = parseClaims(
       issue({
         configuration: snapshotIssuer,
@@ -1276,6 +1281,11 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
       }).claims,
     );
 
+    expect(bound).toBeDefined();
+    expect(bound!.context.roles).toEqual(["support"]);
+    expect(bound!.context.entitlements).toEqual(["plan.pro"]);
+    expect(Object.isFrozen(bound!.context.roles)).toBe(true);
+    expect(Object.isFrozen(bound!.context.entitlements)).toBe(true);
     expect(claims.sub).toBe("principal_original");
     expect(claims.policy_version).toBe(context.policyVersion);
     expect(claims.permissions).toEqual(["support.queue.read"]);
