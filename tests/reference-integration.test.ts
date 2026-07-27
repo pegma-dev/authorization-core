@@ -244,8 +244,10 @@ describe("Phase 5 reference integration", () => {
     );
   });
 
-  it("publishes public-only JWKS, consumes a grant once, and denies replay", async () => {
-    const integration = await createReferenceIntegration();
+  it("publishes public-only JWKS, issues and consumes on one injected clock, and denies replay", async () => {
+    const integration = await createReferenceIntegration({
+      nowEpochMs: () => fixedNow,
+    });
     const running = await integration.start();
     runningServers.push(running);
 

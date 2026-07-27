@@ -71,11 +71,14 @@ version and digest.
 > its billing state is an in-memory stand-in for persisted host state.
 
 The example generates a fresh P-256 key at runtime and commits no private key.
-The production verifier intentionally requires a fixed HTTPS JWKS endpoint.
 Only this in-process demo and its tests import
-`@pegma/authorization-tokens/testing` to inject the public JWKS behind a fixed
-synthetic HTTPS URL. Production code uses `createAccessGrantVerifier`, real
-HTTPS, and a durable replay `Store`.
+`@pegma/authorization-tokens/testing`: the issuer receives the demo's wall
+clock together with a real monotonic clock and CSPRNG, while the verifier
+receives that same wall clock and the public JWKS behind a fixed synthetic
+HTTPS URL. Production code uses `createAccessGrantIssuer` and
+`createAccessGrantVerifier` with their production dependencies, real HTTPS, and
+durable reservation and replay stores. The production verifier intentionally
+requires a fixed HTTPS JWKS endpoint.
 
 See [Getting started](../../docs/GETTING_STARTED.md),
 [Scoping](../../docs/SCOPING.md), the

@@ -30,10 +30,12 @@ import {
 } from "@pegma/authorization-stripe";
 import {
   AccessGrantError,
-  createAccessGrantIssuer,
   createAccessGrantJwks,
 } from "@pegma/authorization-tokens";
-import { createTestAccessGrantVerifier } from "@pegma/authorization-tokens/testing";
+import {
+  createTestAccessGrantIssuer,
+  createTestAccessGrantVerifier,
+} from "@pegma/authorization-tokens/testing";
 import { createMemoryStore } from "@pegma/storage-core";
 
 type LogRecord = Readonly<Record<string, unknown>>;
@@ -590,7 +592,10 @@ export async function createReferenceIntegration(
     { kid: SIGNING_KEY_ID, key: publicKey },
   ]);
   const issuerStore = createMemoryStore();
-  const issuer = createAccessGrantIssuer(
+  // LOCAL TEST/DEMO ONLY: dependency injection keeps both sides on the same
+  // wall clock while preserving a real monotonic clock and CSPRNG. Production
+  // uses createAccessGrantIssuer with its fixed production dependencies.
+  const issuer = createTestAccessGrantIssuer(
     {
       issuer: REFERENCE_ISSUER,
       applicationId: REFERENCE_APPLICATION_ID,
@@ -611,6 +616,11 @@ export async function createReferenceIntegration(
       }),
     },
     issuerStore,
+    {
+      wallNowEpochMs: nowEpochMs,
+      monotonicNowMs: () => performance.now(),
+      randomBytes32: () => webcrypto.getRandomValues(new Uint8Array(32)),
+    },
   );
 
   // LOCAL TEST/DEMO ONLY: production uses createAccessGrantVerifier and fetches
