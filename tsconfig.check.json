@@ -10,6 +10,7 @@
       "@pegma/authorization-auth0": ["./packages/auth0/src/index.ts"],
       "@pegma/authorization-contracts": ["./packages/contracts/src/index.ts"],
       "@pegma/authorization-core": ["./packages/core/src/index.ts"],
+      "@pegma/authorization-policy": ["./packages/policy/src/index.ts"],
       "@pegma/authorization-storage": ["./packages/storage/src/index.ts"],
       "@pegma/authorization-stripe": ["./packages/stripe/src/index.ts"],
       "@pegma/authorization-tokens": ["./packages/tokens/src/index.ts"],
@@ -18,6 +19,11 @@
       ]
     }
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": [
+    "examples/**/*.ts",
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["packages/**/dist/**", "packages/**/node_modules/**"]
 }

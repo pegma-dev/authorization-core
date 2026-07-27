@@ -230,3 +230,7 @@ of a deployed Product Features integration or live Stripe conformance testing.
 [stripe-entitlements]: https://docs.stripe.com/billing/entitlements
 [stripe-webhooks]: https://docs.stripe.com/webhooks
 [stripe-active-list]: https://docs.stripe.com/api/entitlements/active-entitlement/list
+
+For another billing provider, follow [Adapter authoring](ADAPTER_AUTHORING.md).
+For the surrounding host trust boundaries, see the
+[integration security model](SECURITY_MODEL.md) and [Scoping](SCOPING.md).

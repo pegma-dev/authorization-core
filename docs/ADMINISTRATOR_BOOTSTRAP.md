@@ -246,3 +246,8 @@ state machine to make these decisions executable. It demonstrates composition
 only. It is not production bootstrap infrastructure and does not prove durable
 coordination, credential removal, operator identity, or absence of other
 administrators.
+
+The ordinary post-bootstrap administration shape appears in the
+[reference API](../examples/reference-api/README.md). See the
+[integration security model](SECURITY_MODEL.md) before exposing any privileged
+host tooling.

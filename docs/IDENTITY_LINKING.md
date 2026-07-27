@@ -85,3 +85,7 @@ This model intentionally does not yet define:
 Those choices require later integration evidence. Provider SDK objects, email
 fields, profiles, roles, entitlements, and organization data do not belong in
 the identity-link contracts.
+
+See [Getting started](GETTING_STARTED.md), [Adapter authoring](ADAPTER_AUTHORING.md),
+and the [integration security model](SECURITY_MODEL.md) for the surrounding
+application composition.

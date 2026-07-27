@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["reference-integration.ts"],
+  "references": [
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/auth0"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/policy"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/stripe"
+    },
+    {
+      "path": "../../packages/tokens"
+    }
+  ]
+}

@@ -314,3 +314,7 @@ Auth0, Stripe, or provider contracts. Backends are not implemented here either:
 a durable deployment supplies a `@pegma/storage-core` `Store` and this package
 declares its collections against it. This is not a published external
 conformance suite.
+
+See [Scoping](SCOPING.md) for application binding and exact organization
+selection, and the [integration security model](SECURITY_MODEL.md) for
+production obligations.

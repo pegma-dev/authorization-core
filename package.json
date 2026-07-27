@@ -13,8 +13,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "tsc -p tsconfig.check.json --pretty false",
+    "check": "tsc -p tsconfig.check.json --pretty false && npm run docs:api:check",
     "clean": "tsc -b --clean",
+    "docs:api": "npm run build && node scripts/api-docs.mjs",
+    "docs:api:check": "npm run build && node scripts/api-docs.mjs --check",
+    "example": "npm run build && node examples/reference-api/dist/reference-integration.js",
+    "example:serve": "npm run build && node examples/reference-api/dist/reference-integration.js --serve",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run build && vitest run"

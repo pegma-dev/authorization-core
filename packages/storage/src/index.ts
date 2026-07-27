@@ -230,8 +230,8 @@ export type AuditedRevokeRoleAssignmentResult =
  *
  * Implementations decide role-side conflicts before audit-side conflicts.
  * Audit payloads are derived from the role lifecycle; callers supply only an
- * exact event ID. An unchanged revoke replay must present the same
- * pre-revocation concurrency token as the completed operation.
+ * exact event ID. An unchanged revoke replay matches the completed event ID
+ * and revocation evidence; the opaque pre-revocation token is not retained.
  */
 export interface AuditedRoleAssignmentMutationStore {
   readonly grantRoleAssignmentWithAudit: (

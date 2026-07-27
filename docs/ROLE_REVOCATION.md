@@ -148,3 +148,7 @@ authorization deadline or use a separately proven mechanism whose effective
 worst-case revocation bound is equal to or stricter than 60,000 milliseconds.
 Such a mechanism may shorten the remaining role deadline but never extend,
 restart, or bypass it.
+
+See [Scoping](SCOPING.md) for exact cache identity across applications and
+organizations and the [integration security model](SECURITY_MODEL.md) for the
+complete fail-closed checklist.
