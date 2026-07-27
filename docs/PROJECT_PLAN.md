@@ -204,6 +204,14 @@ The repository will stay a monorepo while the public contracts mature.
 Packages should be created only when implementation begins. Empty adapter
 packages make compatibility promises without supplying value.
 
+Two further identity adapters are decided but deliberately unimplemented,
+each with its own decision record and gates: `@pegma/authorization-entra`
+([docs/ENTRA_ADAPTER.md](ENTRA_ADAPTER.md) — after Phase 5, on a real
+consumer) and `@pegma/authorization-identity`
+([docs/IDENTITY_ADAPTER.md](IDENTITY_ADAPTER.md) — after Phase 5 and after
+`@pegma/identity` exists to emit claims). Both keep the auth0 package's
+pure-projection shape; neither starts before its gates open.
+
 Other providers should be implementable outside this repository by depending
 on public contracts and running a published conformance suite.
 
