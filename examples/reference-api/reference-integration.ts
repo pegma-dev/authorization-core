@@ -23,7 +23,10 @@ import type {
 } from "@pegma/authorization-contracts";
 import { decideAccess, resolveAccess } from "@pegma/authorization-core";
 import { parsePolicy } from "@pegma/authorization-policy";
-import { createInMemoryStorageAdapter } from "@pegma/authorization-storage";
+import {
+  createInMemoryStorageAdapter,
+  type RoleAssignmentConcurrencyToken,
+} from "@pegma/authorization-storage";
 import {
   createStripeEntitlementAdapter,
   type StripePersistedEntitlementState,
@@ -61,18 +64,51 @@ export interface TrustedAdministrativeActor {
 }
 
 export interface AdminGrantRoleCommand {
-  readonly assignmentId: string;
+  readonly idempotencyKey: string;
   readonly principalId: string;
   readonly role: string;
   readonly scope: RoleAssignmentScope;
-  readonly auditEventId: string;
 }
 
 export interface AdminRevokeRoleCommand {
+  readonly idempotencyKey: string;
   readonly assignmentId: string;
-  readonly auditEventId: string;
   readonly reason?: string;
 }
+
+interface GrantCommandManifest {
+  readonly kind: "grant";
+  readonly idempotencyKey: string;
+  readonly actorPrincipalId: string;
+  readonly assignmentId: string;
+  readonly auditEventId: string;
+  readonly grantedAtEpochMs: number;
+}
+
+interface RevokeCommandManifest {
+  readonly kind: "revoke";
+  readonly idempotencyKey: string;
+  readonly actorPrincipalId: string;
+  readonly assignmentId: string;
+  readonly expectedConcurrencyToken: RoleAssignmentConcurrencyToken | null;
+  readonly auditEventId: string | null;
+  readonly revokedAtEpochMs: number | null;
+  readonly reason?: string;
+}
+
+type AdministrativeCommandManifest =
+  GrantCommandManifest | RevokeCommandManifest;
+
+interface AdministrativeCommandRegistryEntry {
+  readonly fingerprint: string;
+  readonly prepared: Promise<AdministrativeCommandManifest>;
+  readonly enqueue: <Result>(execute: () => Promise<Result>) => Promise<Result>;
+}
+
+type BoundAdministrativeCommand<
+  Manifest extends AdministrativeCommandManifest,
+> = Omit<AdministrativeCommandRegistryEntry, "prepared"> &
+  Readonly<{ prepared: Promise<Manifest> }>;
 
 interface TargetAccess {
   readonly context: AccessContext;
@@ -117,6 +153,11 @@ const SIGNING_KEY_ID = "phase5-reference-key-2026-07";
 const MAX_STRIPE_STATE_AGE_MS = 15 * 60 * 1_000;
 const ROLE_AUTHORIZATION_LIFETIME_MS = 60_000;
 const MODULE_PERMISSION = "support.module.call";
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
+const HOST_TEXT_PATTERN = /^[^\u0000-\u001F\u007F]{1,200}$/;
+
+class AdministrativeCommandValidationError extends Error {}
+class AdministrativeIdempotencyConflictError extends Error {}
 
 /**
  * Canonicalize the JSON data model with lexicographically sorted object keys.
@@ -216,6 +257,132 @@ const readJson = async (
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 };
 
+const requireCommandObject = (
+  value: unknown,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): Record<string, unknown> => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw new AdministrativeCommandValidationError(
+      "administrative command must be a JSON object",
+    );
+  }
+  const command = value as Record<string, unknown>;
+  const allowed = new Set([...requiredKeys, ...optionalKeys]);
+  const keys = Object.keys(command);
+  if (
+    requiredKeys.some((key) => !Object.hasOwn(command, key)) ||
+    keys.some((key) => !allowed.has(key))
+  ) {
+    throw new AdministrativeCommandValidationError(
+      "administrative command fields are invalid",
+    );
+  }
+  return command;
+};
+
+const requireIdempotencyKey = (value: unknown): string => {
+  if (typeof value !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(value)) {
+    throw new AdministrativeCommandValidationError(
+      "idempotency key is invalid",
+    );
+  }
+  return value;
+};
+
+const readIdempotencyKey = (request: IncomingMessage): string => {
+  const value = request.headers["idempotency-key"];
+  if (Array.isArray(value)) {
+    throw new AdministrativeCommandValidationError(
+      "idempotency key is invalid",
+    );
+  }
+  return requireIdempotencyKey(value);
+};
+
+const requireHostText = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || !HOST_TEXT_PATTERN.test(value)) {
+    throw new AdministrativeCommandValidationError(`${field} is invalid`);
+  }
+  return value;
+};
+
+const parseRoleScope = (value: unknown): RoleAssignmentScope => {
+  const scope = requireCommandObject(value, ["kind"], ["organizationId"]);
+  if (scope.kind === "application" && Object.keys(scope).length === 1) {
+    return Object.freeze({ kind: "application" });
+  }
+  if (
+    scope.kind === "organization" &&
+    Object.keys(scope).length === 2 &&
+    Object.hasOwn(scope, "organizationId")
+  ) {
+    return Object.freeze({
+      kind: "organization",
+      organizationId: requireHostText(
+        scope.organizationId,
+        "scope.organizationId",
+      ),
+    });
+  }
+  throw new AdministrativeCommandValidationError("scope is invalid");
+};
+
+const parseAdminGrantRoleCommand = (value: unknown): AdminGrantRoleCommand => {
+  const command = requireCommandObject(value, [
+    "idempotencyKey",
+    "principalId",
+    "role",
+    "scope",
+  ]);
+  return Object.freeze({
+    idempotencyKey: requireIdempotencyKey(command.idempotencyKey),
+    principalId: requireHostText(command.principalId, "principalId"),
+    role: requireHostText(command.role, "role"),
+    scope: parseRoleScope(command.scope),
+  });
+};
+
+const parseHttpAdminGrantRoleCommand = (
+  value: unknown,
+  idempotencyKey: string,
+): AdminGrantRoleCommand => {
+  const command = requireCommandObject(value, ["principalId", "role", "scope"]);
+  return parseAdminGrantRoleCommand({ ...command, idempotencyKey });
+};
+
+const parseAdminRevokeRoleCommand = (
+  value: unknown,
+): AdminRevokeRoleCommand => {
+  const command = requireCommandObject(
+    value,
+    ["idempotencyKey", "assignmentId"],
+    ["reason"],
+  );
+  const reason =
+    command.reason === undefined
+      ? undefined
+      : requireHostText(command.reason, "reason");
+  return Object.freeze({
+    idempotencyKey: requireIdempotencyKey(command.idempotencyKey),
+    assignmentId: requireHostText(command.assignmentId, "assignmentId"),
+    ...(reason === undefined ? {} : { reason }),
+  });
+};
+
+const parseHttpAdminRevokeRoleCommand = (
+  value: unknown,
+  idempotencyKey: string,
+): AdminRevokeRoleCommand => {
+  const command = requireCommandObject(value, ["assignmentId"], ["reason"]);
+  return parseAdminRevokeRoleCommand({ ...command, idempotencyKey });
+};
+
 const safeScope = (scope: RoleAssignmentScope): RoleAssignmentScope =>
   scope.kind === "application"
     ? { kind: "application" }
@@ -276,6 +443,64 @@ export async function createReferenceIntegration(
     options.logSink?.(detached);
   };
   let stripeLoads = 0;
+  // NON-PRODUCTION: this process-local manifest demonstrates durable command
+  // preparation only for the lifetime of one example instance. Production
+  // must persist the application-scoped binding atomically before mutation.
+  const administrativeCommandManifests = new Map<
+    string,
+    AdministrativeCommandRegistryEntry
+  >();
+  const generatedLifecycleIds = new Set<string>();
+  const generateLifecycleId = (prefix: "assignment" | "audit") => {
+    let identifier: string;
+    do {
+      identifier = `${prefix}-reference-${Buffer.from(
+        webcrypto.getRandomValues(new Uint8Array(16)),
+      ).toString("hex")}`;
+    } while (generatedLifecycleIds.has(identifier));
+    generatedLifecycleIds.add(identifier);
+    return identifier;
+  };
+  const bindAdministrativeCommand = <
+    Manifest extends AdministrativeCommandManifest,
+  >(
+    idempotencyKey: string,
+    fingerprint: string,
+    prepare: () => Manifest | Promise<Manifest>,
+  ): BoundAdministrativeCommand<Manifest> => {
+    const existing = administrativeCommandManifests.get(idempotencyKey);
+    if (existing !== undefined) {
+      if (existing.fingerprint !== fingerprint) {
+        throw new AdministrativeIdempotencyConflictError(
+          "idempotency key is bound to another command",
+        );
+      }
+      return existing as BoundAdministrativeCommand<Manifest>;
+    }
+
+    // Register the single preparation promise before its first asynchronous
+    // step. Concurrent exact retries share one generated command; mismatched
+    // reuse sees the binding and fails before storage.
+    const prepared = Promise.resolve().then(prepare);
+    let executionTail = Promise.resolve();
+    const entry = Object.freeze({
+      fingerprint,
+      prepared,
+      enqueue: <Result>(execute: () => Promise<Result>): Promise<Result> => {
+        const execution = executionTail.then(execute);
+        // A failed or ambiguous attempt releases the queue without replacing
+        // the prepared evidence, so an exact queued retry can safely reissue
+        // the same store command.
+        executionTail = execution.then(
+          () => undefined,
+          () => undefined,
+        );
+        return execution;
+      },
+    });
+    administrativeCommandManifests.set(idempotencyKey, entry);
+    return entry;
+  };
 
   // NON-PRODUCTION: this read-only seed stands in for durable host identity
   // linking. The input below is synthetic and not a verified token.
@@ -485,48 +710,75 @@ export async function createReferenceIntegration(
     return context.principalId;
   };
 
-  const grantRoleAsAuthorizedActor = async (
+  const getOrCreateGrantManifest = (
     actorPrincipalId: string,
-    {
-      assignmentId,
-      principalId,
-      role,
-      scope,
-      auditEventId,
-    }: AdminGrantRoleCommand,
-  ) => {
-    const result = await roleStore.grantRoleAssignmentWithAudit({
-      assignment: {
-        id: assignmentId,
-        principalId,
-        role,
-        scope,
-        grantedBy: { kind: "principal", principalId: actorPrincipalId },
-        grantedAtEpochMs: nowEpochMs(),
-        status: "active",
-      },
-      auditEventId,
-    });
-    log({
-      event: "role_assignment.audit",
+    command: AdminGrantRoleCommand,
+  ): BoundAdministrativeCommand<GrantCommandManifest> => {
+    const fingerprint = canonicalizePolicyDocument({
       applicationId: REFERENCE_APPLICATION_ID,
       operation: "grant",
       actorPrincipalId,
-      assignmentId,
-      auditEventId,
-      principalId,
-      role,
-      scope: safeScope(scope),
-      status: result.status,
-      ...(result.status === "conflict" ? { reason: result.reason } : {}),
-      ...(result.status === "granted" || result.status === "unchanged"
-        ? {
-            auditSequence: result.auditRecord.sequence,
-            auditKind: result.auditRecord.event.kind,
-          }
-        : {}),
+      principalId: command.principalId,
+      role: command.role,
+      scope: command.scope,
     });
-    return result;
+    return bindAdministrativeCommand(command.idempotencyKey, fingerprint, () =>
+      Object.freeze({
+        kind: "grant" as const,
+        idempotencyKey: command.idempotencyKey,
+        actorPrincipalId,
+        assignmentId: generateLifecycleId("assignment"),
+        auditEventId: generateLifecycleId("audit"),
+        grantedAtEpochMs: nowEpochMs(),
+      }),
+    );
+  };
+
+  const grantRoleAsAuthorizedActor = async (
+    actorPrincipalId: string,
+    input: AdminGrantRoleCommand,
+  ) => {
+    const command = parseAdminGrantRoleCommand(input);
+    const binding = getOrCreateGrantManifest(actorPrincipalId, command);
+    const manifest = await binding.prepared;
+    return binding.enqueue(async () => {
+      const result = await roleStore.grantRoleAssignmentWithAudit({
+        assignment: {
+          id: manifest.assignmentId,
+          principalId: command.principalId,
+          role: command.role,
+          scope: command.scope,
+          grantedBy: { kind: "principal", principalId: actorPrincipalId },
+          grantedAtEpochMs: manifest.grantedAtEpochMs,
+          status: "active",
+        },
+        auditEventId: manifest.auditEventId,
+      });
+      log({
+        event: "role_assignment.audit",
+        applicationId: REFERENCE_APPLICATION_ID,
+        operation: "grant",
+        actorPrincipalId,
+        assignmentId: manifest.assignmentId,
+        auditEventId: manifest.auditEventId,
+        principalId: command.principalId,
+        role: command.role,
+        scope: safeScope(command.scope),
+        status: result.status,
+        ...(result.status === "conflict" ? { reason: result.reason } : {}),
+        ...(result.status === "granted" || result.status === "unchanged"
+          ? {
+              auditSequence: result.auditRecord.sequence,
+              auditKind: result.auditRecord.event.kind,
+            }
+          : {}),
+      });
+      return Object.freeze({
+        ...result,
+        assignmentId: manifest.assignmentId,
+        auditEventId: manifest.auditEventId,
+      });
+    });
   };
 
   const adminGrantRole = async (
@@ -538,37 +790,90 @@ export async function createReferenceIntegration(
       command,
     );
 
-  const revokeRoleAsAuthorizedActor = async (
+  const getOrCreateRevokeManifest = (
     actorPrincipalId: string,
-    { assignmentId, auditEventId, reason }: AdminRevokeRoleCommand,
-  ) => {
-    const existing = await roleStore.getRoleAssignment(assignmentId);
-    if (existing === null) return Object.freeze({ status: "not_found" });
-    const result = await roleStore.revokeRoleAssignmentWithAudit({
-      assignmentId,
-      expectedConcurrencyToken: existing.concurrencyToken,
-      revokedBy: { kind: "principal", principalId: actorPrincipalId },
-      revokedAtEpochMs: nowEpochMs(),
-      ...(reason === undefined ? {} : { reason }),
-      auditEventId,
-    });
-    log({
-      event: "role_assignment.audit",
+    command: AdminRevokeRoleCommand,
+  ): BoundAdministrativeCommand<RevokeCommandManifest> => {
+    const fingerprint = canonicalizePolicyDocument({
       applicationId: REFERENCE_APPLICATION_ID,
       operation: "revoke",
       actorPrincipalId,
-      assignmentId,
-      auditEventId,
-      status: result.status,
-      ...(result.status === "conflict" ? { reason: result.reason } : {}),
-      ...(result.status === "revoked" || result.status === "unchanged"
-        ? {
-            auditSequence: result.auditRecord.sequence,
-            auditKind: result.auditRecord.event.kind,
-          }
-        : {}),
+      assignmentId: command.assignmentId,
+      reason: command.reason ?? null,
     });
-    return result;
+    return bindAdministrativeCommand(
+      command.idempotencyKey,
+      fingerprint,
+      async () => {
+        const existing = await roleStore.getRoleAssignment(
+          command.assignmentId,
+        );
+        return Object.freeze({
+          kind: "revoke" as const,
+          idempotencyKey: command.idempotencyKey,
+          actorPrincipalId,
+          assignmentId: command.assignmentId,
+          expectedConcurrencyToken: existing?.concurrencyToken ?? null,
+          auditEventId: existing === null ? null : generateLifecycleId("audit"),
+          revokedAtEpochMs: existing === null ? null : nowEpochMs(),
+          ...(command.reason === undefined ? {} : { reason: command.reason }),
+        });
+      },
+    );
+  };
+
+  const revokeRoleAsAuthorizedActor = async (
+    actorPrincipalId: string,
+    input: AdminRevokeRoleCommand,
+  ) => {
+    const command = parseAdminRevokeRoleCommand(input);
+    const binding = getOrCreateRevokeManifest(actorPrincipalId, command);
+    const manifest = await binding.prepared;
+    if (
+      manifest.expectedConcurrencyToken === null ||
+      manifest.auditEventId === null ||
+      manifest.revokedAtEpochMs === null
+    ) {
+      return Object.freeze({
+        status: "not_found" as const,
+        assignmentId: manifest.assignmentId,
+        auditEventId: null,
+      });
+    }
+    const expectedConcurrencyToken = manifest.expectedConcurrencyToken;
+    const auditEventId = manifest.auditEventId;
+    const revokedAtEpochMs = manifest.revokedAtEpochMs;
+    return binding.enqueue(async () => {
+      const result = await roleStore.revokeRoleAssignmentWithAudit({
+        assignmentId: manifest.assignmentId,
+        expectedConcurrencyToken,
+        revokedBy: { kind: "principal", principalId: actorPrincipalId },
+        revokedAtEpochMs,
+        ...(manifest.reason === undefined ? {} : { reason: manifest.reason }),
+        auditEventId,
+      });
+      log({
+        event: "role_assignment.audit",
+        applicationId: REFERENCE_APPLICATION_ID,
+        operation: "revoke",
+        actorPrincipalId,
+        assignmentId: manifest.assignmentId,
+        auditEventId,
+        status: result.status,
+        ...(result.status === "conflict" ? { reason: result.reason } : {}),
+        ...(result.status === "revoked" || result.status === "unchanged"
+          ? {
+              auditSequence: result.auditRecord.sequence,
+              auditKind: result.auditRecord.event.kind,
+            }
+          : {}),
+      });
+      return Object.freeze({
+        ...result,
+        assignmentId: manifest.assignmentId,
+        auditEventId,
+      });
+    });
   };
 
   const adminRevokeRole = async (
@@ -780,9 +1085,11 @@ export async function createReferenceIntegration(
           writeJson(response, 403, { error: "forbidden" });
           return;
         }
-        const command = (await readJson(
-          request,
-        )) as unknown as AdminGrantRoleCommand;
+        const idempotencyKey = readIdempotencyKey(request);
+        const command = parseHttpAdminGrantRoleCommand(
+          await readJson(request),
+          idempotencyKey,
+        );
         writeJson(
           response,
           200,
@@ -809,9 +1116,11 @@ export async function createReferenceIntegration(
           writeJson(response, 403, { error: "forbidden" });
           return;
         }
-        const command = (await readJson(
-          request,
-        )) as unknown as AdminRevokeRoleCommand;
+        const idempotencyKey = readIdempotencyKey(request);
+        const command = parseHttpAdminRevokeRoleCommand(
+          await readJson(request),
+          idempotencyKey,
+        );
         writeJson(
           response,
           200,
@@ -820,7 +1129,18 @@ export async function createReferenceIntegration(
         return;
       }
       writeJson(response, 404, { error: "not_found" });
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof AdministrativeCommandValidationError ||
+        error instanceof SyntaxError
+      ) {
+        writeJson(response, 400, { error: "invalid_command" });
+        return;
+      }
+      if (error instanceof AdministrativeIdempotencyConflictError) {
+        writeJson(response, 409, { error: "idempotency_conflict" });
+        return;
+      }
       writeJson(response, 500, { error: "request_failed_closed" });
     }
   };

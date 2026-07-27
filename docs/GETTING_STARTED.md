@@ -43,8 +43,13 @@ npm run example
 9. Mutate roles only through `grantRoleAssignmentWithAudit` and
    `revokeRoleAssignmentWithAudit`. Authenticate an exact host actor outside
    the command body, authorize that principal for application-scoped
-   `roles.manage`, and bind the same principal to the audit mutation. Use a
-   durable `Store` in production and follow the
+   `roles.manage`, and bind the same principal to the audit mutation. Generate
+   assignment IDs, audit IDs, lifecycle timestamps, and concurrency evidence
+   from trusted host state. Before mutation, durably bind one validated
+   application-scoped idempotency key to the exact operation, actor, canonical
+   command, and prepared evidence; exact retries reuse it and mismatched reuse
+   conflicts. Regrant uses a new key and fresh assignment ID. Use a durable
+   `Store` in production and follow the
    [revocation cache bound](ROLE_REVOCATION.md).
 10. For an independently deployed module, issue a narrow application-scoped
     grant, publish public-only JWKS, and require `verifyAndConsume` before the

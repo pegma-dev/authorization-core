@@ -57,8 +57,12 @@ Role changes use only the combined audited mutation API on durable production
 storage. Administrative request authentication returns trusted exact actor
 evidence; application-scoped `roles.manage` authorization and the audit
 mutation use that same host principal. Actor identity never comes from a
-mutation body. Revocation is irreversible and regrant uses a fresh ID. The
-first administrator follows the separate
+mutation body. The host generates lifecycle and audit evidence and durably
+binds a validated application-scoped idempotency key to the exact operation,
+actor, canonical command, and prepared store command before mutation. Exact
+retries reuse that evidence; mismatched reuse conflicts. Revocation is
+irreversible, and regrant requires a new key and fresh assignment ID. The first
+administrator follows the separate
 [bootstrap ceremony](ADMINISTRATOR_BOOTSTRAP.md), never signup or first-login.
 
 Every role-derived cache expires strictly before the original authoritative

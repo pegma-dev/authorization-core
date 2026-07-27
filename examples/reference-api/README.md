@@ -44,16 +44,36 @@ Useful routes are:
 - `POST /admin/role-assignments/grant`
 - `POST /admin/role-assignments/revoke`
 
-The administration bodies contain only mutation commands. Actor identity is
-never accepted from those bodies. The HTTP routes deny every request unless the
-host injects an `authorizeAdministrativeRequest` function that returns trusted,
-verified actor evidence containing the exact host principal. That principal is
-then authorized for application-scoped `roles.manage` and bound to both the
-combined mutation and its audit record. The in-process `adminGrantRole` and
-`adminRevokeRole` helpers likewise require actor evidence as a separate first
-argument. A real API must authenticate the request before returning that
-evidence, then also add command schema validation, CSRF protection where
-applicable, rate limiting, and durable operational auditing.
+The administration bodies use exact schemas. Grant accepts only
+`principalId`, `role`, and `scope`; the host generates the fresh assignment ID,
+grant event ID, and trusted timestamp. Revoke accepts only an existing
+`assignmentId` as an untrusted exact-record selector and an optional `reason`;
+the host reads the authoritative record token and generates the revoke event ID
+and trusted timestamp. Actor, audit IDs, timestamps, concurrency tokens, and a
+new grant assignment ID are rejected if supplied in JSON.
+
+Both routes require a bounded `Idempotency-Key` header. Before mutation, the
+example atomically binds that key within the application to the exact
+operation, trusted actor, canonical validated command, generated identifiers,
+timestamp, and—for revoke—the authoritative pre-revocation token. An exact
+retry reuses that prepared command; any key reuse with another operation,
+actor, target, role, scope, or reason returns a conflict. A fresh regrant uses a
+new key and therefore a fresh assignment and event ID, while retrying an old
+grant can never reactivate its revoked lifecycle.
+
+Actor identity is never accepted from a body. The routes deny every request
+unless the host injects `authorizeAdministrativeRequest`, which returns trusted
+verified evidence containing the exact host principal. That principal is then
+authorized for application-scoped `roles.manage` and bound to the mutation and
+audit. The direct `adminGrantRole` and `adminRevokeRole` helpers require actor
+evidence separately and carry the idempotency key in their typed command.
+
+The example manifest is process-local memory so it can demonstrate retries but
+is not production durability. A real API must authenticate the request before
+returning actor evidence and persist the application-scoped idempotency binding
+atomically before mutation, retaining it across ambiguous failures and
+restarts. It must also add CSRF protection where applicable, rate limiting, and
+durable operational auditing.
 
 `REFERENCE_POLICY_CANONICAL_JSON` is produced from one reviewed JSON data model
 by lexicographically sorting object keys. `REFERENCE_POLICY_DIGEST` is computed
