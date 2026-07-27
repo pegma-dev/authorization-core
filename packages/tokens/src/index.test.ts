@@ -967,6 +967,29 @@ describe("@pegma/authorization-tokens verifier", () => {
     });
   });
 
+  it("denies replay consumption when store time has passed retention", async () => {
+    const compact = await issue();
+    const body = await jwksBody();
+    const store = createMemoryStore();
+    await expect(
+      verifier(body, {
+        store,
+        verifierNowMs: (issuedAt + 29) * 1_000,
+        replayNowMs: (issuedAt + 36) * 1_000,
+      }).verifyAndConsume(compact),
+    ).rejects.toThrow("access grant rejected");
+
+    await expect(
+      verifier(body, {
+        store,
+        verifierNowMs: (issuedAt + 1) * 1_000,
+        replayNowMs: (issuedAt + 1) * 1_000,
+      }).verifyAndConsume(compact),
+    ).resolves.toMatchObject({
+      principalId: "principal-001",
+    });
+  });
+
   it("denies a grant that expires while replay consumption is in flight", async () => {
     const compact = await issue(issuerFixture(), [permission]);
     const body = await jwksBody();

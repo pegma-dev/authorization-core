@@ -110,6 +110,13 @@ export function createReplayConsumer(
       ) {
         fail("replay-store clock or retention is invalid");
       }
+      const replayNow = Math.floor(now / 1_000);
+      if (
+        !Number.isSafeInteger(replayNow) ||
+        replayNow > record.retainThrough
+      ) {
+        fail("access-grant replay retention window has passed");
+      }
 
       let result;
       try {
