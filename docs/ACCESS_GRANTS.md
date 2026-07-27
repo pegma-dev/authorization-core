@@ -168,12 +168,15 @@ monotonic sample permanently fails that in-process clock domain, clears
 dependent authorization state, and requires a new process domain plus
 authoritative reload. Restoring the previous numeric value does not revive it.
 
-Immediately before signing, the issuer samples that trusted monotonic clock and
-its trusted wall clock. Let:
+Immediately before signing, the issuer reads its trusted wall clock and then
+samples its trusted monotonic clock. This order is mandatory: a suspension or
+blocking wall-clock read can only shorten the grant after the subsequent
+monotonic sample; it cannot preserve stale source lifetime against a newer
+`iat`. Let:
 
 ```text
-remainingMs = sourceExpiresAtMonotonicMs - monotonicNowMs
 iat = floor(wallNowEpochMs / 1,000)
+remainingMs = sourceExpiresAtMonotonicMs - monotonicNowMs
 wholeRemainingSeconds = floor(remainingMs / 1,000)
 nominalLifetimeSeconds = min(30, wholeRemainingSeconds - 5)
 exp = iat + nominalLifetimeSeconds

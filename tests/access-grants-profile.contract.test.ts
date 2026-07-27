@@ -84,7 +84,6 @@ const boundSourceAuthorizations = new WeakMap<
 type IssueInput = Readonly<{
   configuration: TestIssuerConfiguration;
   audience: string;
-  jti: string;
   requestedPermissions: readonly string[];
   source: SourceAuthorizationCapability;
 }>;
@@ -209,6 +208,8 @@ class TestGuardedMonotonicClock {
 type TestIssuerState = Readonly<{
   monotonicClock: TestGuardedMonotonicClock;
   wallNowEpochMs: () => number;
+  randomBytes32: () => Uint8Array;
+  issuedJtis: Set<string>;
 }>;
 
 const testIssuerStates = new WeakMap<
@@ -229,6 +230,7 @@ class TestIssuerConfiguration {
     kid: string;
     monotonicNowMs: () => number;
     wallNowEpochMs: () => number;
+    randomBytes32: () => Uint8Array;
     audiences: Readonly<Record<string, readonly string[]>>;
     acceptedPolicies: readonly Readonly<{
       version: string;
@@ -264,6 +266,8 @@ class TestIssuerConfiguration {
     testIssuerStates.set(this, {
       monotonicClock: new TestGuardedMonotonicClock(input.monotonicNowMs),
       wallNowEpochMs: input.wallNowEpochMs,
+      randomBytes32: input.randomBytes32,
+      issuedJtis: new Set(),
     });
     Object.freeze(this);
   }
@@ -395,8 +399,8 @@ function issueAccessGrant(input: IssueInput): TestCompactGrant {
   ) {
     fail("source authorization binding does not match the access context");
   }
-  const monotonicNowMs = issuerState.monotonicClock.sample();
   const wallNowEpochMs = issuerState.wallNowEpochMs();
+  const monotonicNowMs = issuerState.monotonicClock.sample();
   if (
     !Number.isFinite(wallNowEpochMs) ||
     !Number.isFinite(source.expiresAtMonotonicMs) ||
@@ -413,12 +417,8 @@ function issueAccessGrant(input: IssueInput): TestCompactGrant {
   ) {
     fail("source access context or policy identity is malformed");
   }
-  if (
-    typeof input.audience !== "string" ||
-    input.audience.length === 0 ||
-    !isCanonicalBase64Url32(input.jti)
-  ) {
-    fail("audience or unique identifier is malformed");
+  if (typeof input.audience !== "string" || input.audience.length === 0) {
+    fail("audience is malformed");
   }
 
   const permissions = canonicalizePermissions(requestedPermissions);
@@ -452,6 +452,15 @@ function issueAccessGrant(input: IssueInput): TestCompactGrant {
   if (!isNumericDate(iat) || !isNumericDate(exp)) {
     fail("issued NumericDate is invalid");
   }
+  const randomBytes = issuerState.randomBytes32();
+  if (!(randomBytes instanceof Uint8Array) || randomBytes.byteLength !== 32) {
+    fail("issuer random source returned a malformed unique identifier");
+  }
+  const jti = Buffer.from(randomBytes).toString("base64url");
+  if (!isCanonicalBase64Url32(jti) || issuerState.issuedJtis.has(jti)) {
+    fail("issuer random source repeated or returned a malformed identifier");
+  }
+  issuerState.issuedJtis.add(jti);
 
   return Object.freeze({
     header: entriesFromRecord({
@@ -466,7 +475,7 @@ function issueAccessGrant(input: IssueInput): TestCompactGrant {
       sub: context.principalId,
       exp,
       iat,
-      jti: input.jti,
+      jti,
       profile_version: PROFILE_VERSION,
       policy_version: context.policyVersion,
       policy_digest: source.policyDigest,
@@ -830,9 +839,9 @@ const applicationId = "authorization-core";
 const audience = "support-api";
 const billingAudience = "billing-api";
 const kid = "key-2026-07-26-001";
-const jti = base64Url32(1);
 let issuerMonotonicNowMs = 0;
 let issuerWallNowEpochMs = 1_785_087_000_999;
+let nextRandomFillByte = 1;
 
 const context: AccessContext = Object.freeze({
   principalId: "principal_123",
@@ -851,6 +860,7 @@ function createIssuerConfiguration(
     applicationId: string;
     monotonicNowMs: () => number;
     wallNowEpochMs: () => number;
+    randomBytes32: () => Uint8Array;
   }> = {},
 ): TestIssuerConfiguration {
   return new TestIssuerConfiguration({
@@ -859,6 +869,13 @@ function createIssuerConfiguration(
     kid,
     monotonicNowMs: overrides.monotonicNowMs ?? (() => issuerMonotonicNowMs),
     wallNowEpochMs: overrides.wallNowEpochMs ?? (() => issuerWallNowEpochMs),
+    randomBytes32:
+      overrides.randomBytes32 ??
+      (() => {
+        const fillByte = nextRandomFillByte;
+        nextRandomFillByte += 1;
+        return new Uint8Array(32).fill(fillByte);
+      }),
     audiences: {
       [audience]: ["support.queue.read", "support.ticket.reply.any"],
       [billingAudience]: ["account.read.own"],
@@ -906,7 +923,6 @@ function issue(overrides: Partial<IssueInput> = {}): TestCompactGrant {
   return issueAccessGrant({
     configuration,
     audience,
-    jti,
     requestedPermissions: [
       "support.ticket.reply.any",
       "support.queue.read",
@@ -1037,7 +1053,6 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     const billingGrant = issue({
       audience: billingAudience,
       requestedPermissions: ["account.read.own"],
-      jti: base64Url32(4),
     });
     await expect(
       verifyFresh(
@@ -1067,9 +1082,16 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     ).rejects.toThrow("issuer, application, or audience does not match");
 
     const store = new TestReplayStore(() => 100);
-    store.consume(issuer, applicationId, audience, jti, 105);
+    const replayJti = base64Url32(201);
+    store.consume(issuer, applicationId, audience, replayJti, 105);
     expect(() =>
-      store.consume(issuer, "another-host-application", audience, jti, 105),
+      store.consume(
+        issuer,
+        "another-host-application",
+        audience,
+        replayJti,
+        105,
+      ),
     ).not.toThrow();
   });
 
@@ -1152,6 +1174,60 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     ).toBeLessThanOrEqual(60);
   });
 
+  it("samples monotonic time after the wall clock so pauses cannot extend the source deadline", () => {
+    let monotonicNowMs = 0;
+    const pausingIssuer = createIssuerConfiguration({
+      monotonicNowMs: () => monotonicNowMs,
+      wallNowEpochMs: () => {
+        monotonicNowMs = 5_001;
+        return issuerWallNowEpochMs;
+      },
+    });
+    const source = sourceAuthorization({
+      configuration: pausingIssuer,
+      maximumLifetimeMs: 6_000,
+    });
+
+    expect(() => issue({ configuration: pausingIssuer, source })).toThrow(
+      "not enough source authorization lifetime",
+    );
+  });
+
+  it("owns unique identifier generation and fails closed on malformed or repeated output", () => {
+    const callerChosenJti = base64Url32(99);
+    const issuerOwned = issue({
+      jti: callerChosenJti,
+    } as Partial<IssueInput>);
+    expect(parseClaims(issuerOwned.claims).jti).not.toBe(callerChosenJti);
+
+    const malformedIssuer = createIssuerConfiguration({
+      randomBytes32: () => new Uint8Array(31),
+    });
+    expect(() =>
+      issue({
+        configuration: malformedIssuer,
+        source: sourceAuthorization({ configuration: malformedIssuer }),
+      }),
+    ).toThrow("random source returned a malformed unique identifier");
+
+    const repeatedBytes = new Uint8Array(32).fill(42);
+    const repeatingIssuer = createIssuerConfiguration({
+      randomBytes32: () => repeatedBytes,
+    });
+    expect(
+      issue({
+        configuration: repeatingIssuer,
+        source: sourceAuthorization({ configuration: repeatingIssuer }),
+      }),
+    ).toBeDefined();
+    expect(() =>
+      issue({
+        configuration: repeatingIssuer,
+        source: sourceAuthorization({ configuration: repeatingIssuer }),
+      }),
+    ).toThrow("random source repeated");
+  });
+
   it("uses zero expiration leeway and retains replay state for every real accepted instant", async () => {
     const realIssueEpochSeconds = 2_000_000_010;
     const sourceMonotonicNowMs = 10_000;
@@ -1169,10 +1245,8 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
       realNow < realSourceDeadlineEpochSeconds;
       realNow += 1
     ) {
-      const vectorJti = base64Url32(realNow - realIssueEpochSeconds + 10);
       const grant = issue({
         configuration: timingIssuer,
-        jti: vectorJti,
         source: sourceAuthorization({
           configuration: timingIssuer,
           maximumLifetimeMs: sourceDeadlineMonotonicMs - sourceMonotonicNowMs,
@@ -1199,7 +1273,7 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
           issuer,
           applicationId,
           audience,
-          vectorJti,
+          claims.jti,
         ),
       ).toBe(true);
 
@@ -1212,14 +1286,13 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
           issuer,
           applicationId,
           audience,
-          vectorJti,
+          claims.jti,
         ),
       ).toBe(true);
     }
 
     const boundaryGrant = issue({
       configuration: timingIssuer,
-      jti: base64Url32(100),
       source: sourceAuthorization({
         configuration: timingIssuer,
         maximumLifetimeMs: sourceDeadlineMonotonicMs - sourceMonotonicNowMs,
@@ -1361,9 +1434,6 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     await expect(
       verifyFresh(replaceClaim(grant, "exp", 1_785_087_030.5)),
     ).rejects.toThrow("claims are malformed");
-    expect(() => issue({ jti: noncanonicalJti })).toThrow(
-      "unique identifier is malformed",
-    );
     await expect(
       verifyFresh(replaceClaim(grant, "jti", noncanonicalJti)),
     ).rejects.toThrow("claims are malformed");
@@ -1407,7 +1477,12 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
     ).rejects.toThrow("already consumed");
 
     const corrupt = new TestReplayStore(() => 1_785_087_001);
-    corrupt.corrupt(issuer, applicationId, audience, jti);
+    corrupt.corrupt(
+      issuer,
+      applicationId,
+      audience,
+      parseClaims(grant.claims).jti,
+    );
     await expect(
       verifyAndConsume(grant, verifier(), cache, corrupt, 1_785_087_001, 0),
     ).rejects.toThrow("record is corrupt");
@@ -1416,26 +1491,27 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
   it("retains replay records through the bound and expires them only afterward", () => {
     let storeNow = 100;
     const store = new TestReplayStore(() => storeNow);
-    store.consume(issuer, applicationId, audience, jti, 105);
+    const replayJti = base64Url32(202);
+    store.consume(issuer, applicationId, audience, replayJti, 105);
 
     storeNow = 105;
-    expect(store.hasRecordThrough(issuer, applicationId, audience, jti)).toBe(
-      true,
-    );
+    expect(
+      store.hasRecordThrough(issuer, applicationId, audience, replayJti),
+    ).toBe(true);
     expect(() =>
-      store.consume(issuer, applicationId, audience, jti, 110),
+      store.consume(issuer, applicationId, audience, replayJti, 110),
     ).toThrow("already consumed");
 
     storeNow = 106;
-    expect(store.hasRecordThrough(issuer, applicationId, audience, jti)).toBe(
-      false,
-    );
+    expect(
+      store.hasRecordThrough(issuer, applicationId, audience, replayJti),
+    ).toBe(false);
     expect(() =>
-      store.consume(issuer, applicationId, audience, jti, 110),
+      store.consume(issuer, applicationId, audience, replayJti, 110),
     ).not.toThrow();
-    expect(store.hasRecordThrough(issuer, applicationId, audience, jti)).toBe(
-      true,
-    );
+    expect(
+      store.hasRecordThrough(issuer, applicationId, audience, replayJti),
+    ).toBe(true);
   });
 
   it("bounds unknown-kid refresh amplification and admits rotation after cooldown", async () => {
@@ -1560,7 +1636,7 @@ describe("Pegma access-grant profile V1 test-local contract", () => {
       "principalId" | "policyVersion" | "roles" | "entitlements" | "permissions"
     >();
     expectTypeOf<keyof IssueInput>().toEqualTypeOf<
-      "configuration" | "audience" | "jti" | "requestedPermissions" | "source"
+      "configuration" | "audience" | "requestedPermissions" | "source"
     >();
   });
 });
