@@ -48,12 +48,14 @@ Application roles ──┘
 | `@pegma/authorization-auth0`     | Verified Auth0 claims to identity-link keys     |
 | `@pegma/authorization-stripe`    | Trusted Stripe IDs to active entitlements       |
 | `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core`    |
+| `@pegma/authorization-tokens`    | Signed one-use grants, JWKS, and verification   |
 
 Storage declares its collections against a `@pegma/storage-core` `Store`, so
 the assignment-and-audit transaction boundary closes in one single-partition
-transaction on whatever backend the host supplies. The Phase 4 signed
-access-grant profile is now specified, but its package remains uncreated until
-implementation begins.
+transaction on whatever backend the host supplies.
+`@pegma/authorization-tokens` likewise declares separate identifier-reservation
+and replay-consumption collections against host-supplied `Store` instances; it
+does not provide or select a persistence backend.
 
 ## Example
 
@@ -136,8 +138,9 @@ failure, and stale in-flight fills fail closed; a clock anomaly permanently
 retires that shared domain for caches and composed decisions. See
 [Fast role revocation and cache bounds](docs/ROLE_REVOCATION.md).
 
-The [Pegma access-grant V1 profile](docs/ACCESS_GRANTS.md) specifies a
-short-lived, one-use service credential without adding a runtime package yet.
+The [Pegma access-grant V1 profile](docs/ACCESS_GRANTS.md) and
+`@pegma/authorization-tokens` implement a short-lived, one-use service
+credential.
 It carries only a canonical nonempty audience-allowlisted subset of effective
 permissions, plus exact issuer, one service audience, host principal, lifetime,
 policy version and digest, exact provider-neutral host application identity,
@@ -151,6 +154,17 @@ succeeds and before any protected action, preventing reuse after the first
 successful request. The 30-second nominal lifetime reserves a maximum
 five-second negative verifier clock offset inside the source monotonic
 authorization deadline and permits no positive expiration leeway.
+
+The issuer owns its source reader, application-controlled P-256 private key,
+clocks, and secure identifier generation. Its opaque read evidence snapshots
+the authoritative `AccessContext` and original deadline before it can be bound
+and signed. Before signing, it atomically and permanently reserves the
+issuer/application/`jti` tuple through its host-supplied
+`@pegma/storage-core` `Store`. The verifier owns one exact
+issuer/application/audience/policy configuration and exposes only
+`verifyAndConsume`; it validates a fixed HTTPS JWKS, then atomically inserts
+the separate replay tuple before returning verified permissions. Private keys
+never enter a Pegma package or JWKS.
 
 `resolveAccessWithDiagnostics` is an opt-in observability API. It returns the
 same access context as `resolveAccess` plus canonical lists of unknown subject

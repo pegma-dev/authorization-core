@@ -2,9 +2,8 @@
 
 ## Status
 
-**Stage:** Phase 4 signed access-grant profile specified; implementation pending
-(Foundation and Phases 1–3 complete; Phase 4 decision slice complete; `0.x`,
-public API unstable)
+**Stage:** Phase 4 signed access grants complete
+(Foundation and Phases 1–4 complete; `0.x`, public API unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -547,7 +546,7 @@ with an auditable history.
 **Goal:** Let independently deployed modules consume access safely.
 
 - [x] Define a short-lived access-grant JWT profile.
-- [ ] Use an application-controlled signing key and published JWKS.
+- [x] Use an application-controlled signing key and published JWKS.
 - [x] Require issuer, audience, expiration, exact policy version and digest,
       principal ID, token kind, profile version, effective permissions, and a
       unique one-use identifier.
@@ -555,7 +554,7 @@ with an auditable history.
       claims and reject organization-scoped source authorization, leaving any
       confinement design to a separate future profile.
 - [x] Document key rotation, replay prevention, and token revocation limits.
-- [ ] Add verification libraries and cross-language test vectors.
+- [x] Add verification libraries and cross-language test vectors.
 - [x] Keep browser sessions and offline commercial licenses outside this token
       profile.
 
@@ -582,14 +581,25 @@ seconds, terminal monotonic-regression guards, bounded issuer-scoped unknown-key
 refresh, and atomic one-time consumption keyed by
 `(iss, application_id, aud, jti)`.
 
-The root contract test mechanizes only the non-cryptographic claim,
-opaque-source-capability, guarded-clock, lifetime, replay-state, canonical
-base64url, and key-cache decisions within one deterministic process. Real
-compact JWS parsing, ES256 signing and verification, complete JWKS document and
-redirect validation, production multi-instance atomic consumption, production
-clock quality, and cross-language vectors remain future implementation work.
-The token package, published JWKS, JOSE dependency, and persistence
-implementation remain unimplemented.
+`@pegma/authorization-tokens` implements the profile with `jose` ES256 compact
+signing and verification, opaque issuer-local source read and binding
+capabilities, strict duplicate-aware JSON and canonical compact parsing,
+public-only JWKS projection and complete set validation, fixed-origin
+single-flight key caching shared weakly across verifier instances, and
+verify-then-consume sequencing. Exact issuer/application/`jti` reservations
+and service replay records use the separate declared
+`authorization_access_grant_jti_reservations` and
+`authorization_access_grant_replays` collections through host-supplied
+`@pegma/storage-core` `Store` instances; Authorization Core adds no persistence
+backend. A committed public-key-only vector exercises the exact
+compact token and JWKS across implementations without repository private key
+material.
+
+The reference-store tests prove package-level sequencing and concurrent
+one-winner behavior, not a production backend's multi-process durability,
+atomicity, retention, access control, or independent clock accuracy. Those
+remain deployment obligations covered by storage-core adapter conformance and
+operations.
 
 **Exit criterion:** A support module can verify a narrowly scoped access grant
 without querying Auth0 or Stripe.
@@ -702,10 +712,9 @@ speculatively:
 
 ## Near-term backlog
 
-1. Implement the V1 signer, verifier, host-supplied one-use consumption over a
-   declared collection in an `@pegma/storage-core` `Store`, and JWKS publication
-   surface from `docs/ACCESS_GRANTS.md`, then add cryptographic and
-   cross-language test vectors.
+1. Prepare the Phase 5 pre-release documentation set, API reference generation,
+   and first runnable integration example that exercises the completed Phase 4
+   access-grant runtime.
 
 The backlog should stay small until the first integration reveals which
 abstractions are genuinely reusable.
