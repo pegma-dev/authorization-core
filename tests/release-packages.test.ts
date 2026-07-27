@@ -171,6 +171,8 @@ describe("release source authentication", () => {
     expect(publish).not.toContain("npm test");
     expect(publish).not.toContain("release:pack");
     expect(publish).toContain("npm run release:publish");
+    expect(workflow).not.toContain("github.run_attempt");
+    expect(workflow).toContain("retention-days: 30");
   });
 });
 

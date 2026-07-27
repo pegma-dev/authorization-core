@@ -210,9 +210,11 @@ release tag. If a release needs different bytes, prepare a new version.
 ## Workflow recovery
 
 The workflow is globally serialized. If it stops after publishing only part of
-the package set, rerun the failed workflow for the same GitHub release and
-unchanged tag. It prepares the same commit again, then checks npm before each
-publish:
+the package set, rerun the failed jobs for the same GitHub release and unchanged
+tag. The prepared artifact name is stable across attempts and is retained for
+30 days, so the publisher reuses the verified tarballs from the same workflow
+run. A full rerun may replace that artifact with freshly prepared bytes from the
+same authenticated commit. Before each publish:
 
 - absent version: publish the prepared tarball;
 - existing version with identical `dist.integrity`: verify and skip it;
