@@ -618,13 +618,13 @@ without querying Auth0 or Stripe.
 **Goal:** Demonstrate a complete integration without turning the core into a
 hosted product.
 
-- Publish the first public `0.x` packages, together with the documentation
-  deliverables listed below, so external integrations can depend on them.
-- Publish an example API with `/access/me` and permission middleware.
-- Add a minimal role-assignment administration example.
-- Add structured decision and audit logging examples.
-- Document multi-application and multi-organization scoping.
-- Publish migration guidance from ad hoc role and plan checks.
+- [x] Publish the first public `0.x` packages, together with the documentation
+      deliverables listed below, so external integrations can depend on them.
+- [x] Publish an example API with `/access/me` and permission middleware.
+- [x] Add a minimal role-assignment administration example.
+- [x] Add structured decision and audit logging examples.
+- [x] Document multi-application and multi-organization scoping.
+- [x] Publish migration guidance from ad hoc role and plan checks.
 
 **Pre-release integration boundary (2026-07-27):** The repository now contains a
 clean-clone runnable Node reference API composed only through public package
