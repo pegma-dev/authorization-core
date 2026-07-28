@@ -52,8 +52,9 @@ or logs.
 
 `@pegma/authorization-core/conformance` exports runner-neutral case arrays for
 the provider-neutral `IdentityAdapter` and `EntitlementAdapter` ports. It has no
-test-framework dependency. Register each case with the runner already used by
-the adapter:
+test-framework dependency. The conformance entrypoint currently targets Node.js
+22 or newer and uses `node:assert/strict` internally. Register each case with
+the runner already used by the adapter:
 
 ```ts
 import {
@@ -68,6 +69,8 @@ const createIdentityAdapter: IdentityAdapterConformanceFactory = async (
 ) => {
   // Populate the adapter's real test backend from fixture.links.
   // Configure fixture.unavailableKeys to reject as operational failures.
+  // If the adapter requires richer verified input, return a semantic-key
+  // resolver that adds that evidence before calling the real adapter.
   return buildIdentityAdapter(fixture);
 };
 

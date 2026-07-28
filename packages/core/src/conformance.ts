@@ -18,14 +18,30 @@ export interface IdentityAdapterConformanceFixture {
 }
 
 /**
+ * Semantic-key lookup surface exercised by the identity conformance cases.
+ *
+ * An {@link IdentityAdapter} whose input carries additional verified evidence
+ * can expose that real adapter through this surface by constructing its richer
+ * input for each supplied issuer-and-subject key.
+ */
+export interface IdentityAdapterConformanceSubject {
+  readonly resolvePrincipalId: (
+    key: IdentityLinkKey,
+  ) => Promise<PrincipalId | null>;
+}
+
+/**
  * Build an adapter over the exact semantic fixture supplied by the suite.
  *
  * Provider-specific evidence, storage, and configuration remain inside the
- * factory. Keys in `unavailableKeys` must exercise an operational failure.
+ * factory. Return the adapter directly when it accepts an {@link IdentityLinkKey};
+ * for richer adapter inputs, return a semantic-key resolver that supplies the
+ * additional verified evidence before calling the real adapter. Keys in
+ * `unavailableKeys` must exercise an operational failure.
  */
 export type IdentityAdapterConformanceFactory = (
   fixture: IdentityAdapterConformanceFixture,
-) => Promise<IdentityAdapter>;
+) => Promise<IdentityAdapterConformanceSubject>;
 
 /** One framework-independent identity-adapter conformance case. */
 export interface IdentityAdapterConformanceCase {
@@ -275,19 +291,34 @@ export const identityAdapterConformanceCases: readonly IdentityAdapterConformanc
     {
       name: "identity tuple components cannot collide through delimiters",
       run: async (createAdapter) => {
-        const first = frozenKey({ issuer: "a", subject: "\u0000b" });
-        const second = frozenKey({ issuer: "a\u0000", subject: "b" });
+        const nullFirst = frozenKey({ issuer: "a", subject: "\u0000b" });
+        const nullSecond = frozenKey({ issuer: "a\u0000", subject: "b" });
+        const pipeFirst = frozenKey({ issuer: "a|b", subject: "c" });
+        const pipeSecond = frozenKey({ issuer: "a", subject: "b|c" });
         const adapter = await createAdapter(
           identityFixture([
-            { key: first, principalId: hostPrincipalOne },
-            { key: second, principalId: hostPrincipalTwo },
+            { key: nullFirst, principalId: hostPrincipalOne },
+            { key: nullSecond, principalId: hostPrincipalTwo },
+            { key: pipeFirst, principalId: "host-principal-three" },
+            { key: pipeSecond, principalId: "host-principal-four" },
           ]),
         );
 
-        assert.equal(await adapter.resolvePrincipalId(first), hostPrincipalOne);
         assert.equal(
-          await adapter.resolvePrincipalId(second),
+          await adapter.resolvePrincipalId(nullFirst),
+          hostPrincipalOne,
+        );
+        assert.equal(
+          await adapter.resolvePrincipalId(nullSecond),
           hostPrincipalTwo,
+        );
+        assert.equal(
+          await adapter.resolvePrincipalId(pipeFirst),
+          "host-principal-three",
+        );
+        assert.equal(
+          await adapter.resolvePrincipalId(pipeSecond),
+          "host-principal-four",
         );
       },
     },

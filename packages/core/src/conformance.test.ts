@@ -40,6 +40,20 @@ const createIdentityAdapter: IdentityAdapterConformanceFactory = async (
   return adapter;
 };
 
+const createPipeJoinedIdentityAdapter: IdentityAdapterConformanceFactory =
+  async (fixture) => {
+    const links = new Map(
+      fixture.links.map(({ key, principalId }) => [
+        `${key.issuer}|${key.subject}`,
+        principalId,
+      ]),
+    );
+    return {
+      resolvePrincipalId: async (key) =>
+        links.get(`${key.issuer}|${key.subject}`) ?? null,
+    };
+  };
+
 const createEntitlementAdapter: EntitlementAdapterConformanceFactory = async (
   fixture,
 ) => {
@@ -153,6 +167,62 @@ describe("@pegma/authorization-core/conformance", () => {
     ].map(({ name }) => name);
 
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("supports richer verified identity inputs through a semantic resolver", async () => {
+    type ProviderEvidence = IdentityLinkKey &
+      Readonly<{ providerSessionId: string }>;
+
+    const createRicherInputAdapter: IdentityAdapterConformanceFactory = async (
+      fixture,
+    ) => {
+      const links = fixture.links.map(({ key, principalId }) => ({
+        key: { ...key },
+        principalId,
+      }));
+      const unavailableKeys = fixture.unavailableKeys.map((key) => ({
+        ...key,
+      }));
+      const adapter: IdentityAdapter<ProviderEvidence> = {
+        resolvePrincipalId: async (input) => {
+          if (input.providerSessionId !== "verified-provider-session") {
+            throw new Error("provider evidence was not supplied");
+          }
+          if (
+            unavailableKeys.some((candidate) => keysEqual(candidate, input))
+          ) {
+            throw new Error("identity store unavailable");
+          }
+          return (
+            links.find((candidate) => keysEqual(candidate.key, input))
+              ?.principalId ?? null
+          );
+        },
+      };
+      return {
+        resolvePrincipalId: (key) =>
+          adapter.resolvePrincipalId({
+            ...key,
+            providerSessionId: "verified-provider-session",
+          }),
+      };
+    };
+
+    for (const testCase of identityAdapterConformanceCases) {
+      await testCase.run(createRicherInputAdapter);
+    }
+  });
+
+  it("rejects identity keys collapsed with a common delimiter", async () => {
+    const testCase = identityAdapterConformanceCases.find(
+      ({ name }) =>
+        name === "identity tuple components cannot collide through delimiters",
+    );
+
+    expect(testCase).toBeDefined();
+    await expect(
+      testCase!.run(createPipeJoinedIdentityAdapter),
+    ).rejects.toThrow();
   });
 
   it("rejects an adapter that ignores the requested principal", async () => {

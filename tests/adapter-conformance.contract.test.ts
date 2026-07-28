@@ -3,7 +3,6 @@ import { describe, it } from "vitest";
 import type {
   EntitlementAdapter,
   IdentityAdapter,
-  IdentityLinkKey,
 } from "@pegma/authorization-contracts";
 import {
   entitlementAdapterConformanceCases,
@@ -12,33 +11,56 @@ import {
   type EntitlementFixtureState,
   type IdentityAdapterConformanceFactory,
 } from "@pegma/authorization-core/conformance";
-import { createInMemoryStorageAdapter } from "@pegma/authorization-storage";
+import {
+  createInMemoryStorageAdapter,
+  createRoleStore,
+} from "@pegma/authorization-storage";
+import {
+  createMemoryStore,
+  type CollectionDefinition,
+  type CollectionStore,
+  type Store,
+} from "@pegma/storage-core";
 import {
   createStripeEntitlementAdapter,
   type StripeEntitlementRule,
   type StripePersistedEntitlementState,
 } from "@pegma/authorization-stripe";
 
-function keysEqual(left: IdentityLinkKey, right: IdentityLinkKey): boolean {
-  return left.issuer === right.issuer && left.subject === right.subject;
+function createRejectingReadStore(): Store {
+  const backing = createMemoryStore();
+  return {
+    collection<T>(definition: CollectionDefinition<T>): CollectionStore<T> {
+      const collection = backing.collection(definition);
+      return new Proxy(collection, {
+        get(target, property, receiver) {
+          if (property === "get") {
+            return async () => {
+              throw new Error("identity store unavailable");
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  };
 }
 
 const createIdentityAdapter: IdentityAdapterConformanceFactory = async (
   fixture,
 ) => {
+  if (fixture.unavailableKeys.length > 0) {
+    return createRoleStore(
+      createRejectingReadStore(),
+      "conformance-application",
+    );
+  }
+
   const storage = createInMemoryStorageAdapter({
     identityLinks: fixture.links,
   });
-  const adapter: IdentityAdapter = {
-    resolvePrincipalId: async (key) => {
-      if (
-        fixture.unavailableKeys.some((candidate) => keysEqual(candidate, key))
-      ) {
-        throw new Error("identity store unavailable");
-      }
-      return storage.resolvePrincipalId(key);
-    },
-  };
+  const adapter: IdentityAdapter = storage;
   return adapter;
 };
 

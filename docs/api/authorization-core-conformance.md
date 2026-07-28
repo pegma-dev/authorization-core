@@ -134,12 +134,15 @@ export declare const identityAdapterConformanceCases: readonly IdentityAdapterCo
 Build an adapter over the exact semantic fixture supplied by the suite.
 
 Provider-specific evidence, storage, and configuration remain inside the
-factory. Keys in `unavailableKeys` must exercise an operational failure.
+factory. Return the adapter directly when it accepts an {@link IdentityLinkKey};
+for richer adapter inputs, return a semantic-key resolver that supplies the
+additional verified evidence before calling the real adapter. Keys in
+`unavailableKeys` must exercise an operational failure.
 
 ```ts
 export type IdentityAdapterConformanceFactory = (
   fixture: IdentityAdapterConformanceFixture,
-) => Promise<IdentityAdapter>;
+) => Promise<IdentityAdapterConformanceSubject>;
 ```
 
 ## IdentityAdapterConformanceFixture
@@ -152,5 +155,23 @@ Semantic identity state supplied to one conformance case.
 export interface IdentityAdapterConformanceFixture {
   readonly links: readonly IdentityLink[];
   readonly unavailableKeys: readonly IdentityLinkKey[];
+}
+```
+
+## IdentityAdapterConformanceSubject
+
+**Kind:** interface
+
+Semantic-key lookup surface exercised by the identity conformance cases.
+
+An {@link IdentityAdapter} whose input carries additional verified evidence
+can expose that real adapter through this surface by constructing its richer
+input for each supplied issuer-and-subject key.
+
+```ts
+export interface IdentityAdapterConformanceSubject {
+  readonly resolvePrincipalId: (
+    key: IdentityLinkKey,
+  ) => Promise<PrincipalId | null>;
 }
 ```

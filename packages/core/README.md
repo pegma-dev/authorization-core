@@ -18,7 +18,9 @@ See the [getting-started guide](https://github.com/pegma-dev/authorization-core/
 The `@pegma/authorization-core/conformance` subpath exports
 framework-independent identity and entitlement adapter cases. Adapter authors
 translate the suite's semantic fixtures into their provider and persistence
-model, then register the cases with their existing test runner:
+model, then register the cases with their existing test runner. The conformance
+entrypoint currently expects Node.js 22 or newer and uses `node:assert/strict`
+internally:
 
 ```ts
 import {
