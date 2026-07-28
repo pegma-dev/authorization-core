@@ -76,6 +76,30 @@ describe("release package metadata", () => {
     expect(rootManifest.scripts["identity-bootstrap:publish"]).toBeUndefined();
   });
 
+  it("requires the existing signed Identity bootstrap tag without recreating it", () => {
+    const releaseGuide = readFileSync(
+      join(process.cwd(), "docs", "RELEASING.md"),
+      "utf8",
+    );
+    const identityBootstrap = releaseGuide
+      .split("## Bootstrap for the new Identity adapter package")[1]
+      ?.split("## First advertised release and later releases")[0];
+    expect(identityBootstrap).toBeDefined();
+    expect(identityBootstrap).toContain(
+      "git fetch origin tag authorization-identity-v0.0.0",
+    );
+    expect(identityBootstrap).toContain(
+      "git verify-tag authorization-identity-v0.0.0",
+    );
+    expect(identityBootstrap).toContain(
+      "afdf3f168d355629b2721512c246c1a18fd54c9d",
+    );
+    expect(identityBootstrap).toContain(
+      "do not recreate, move, or force the tag",
+    );
+    expect(identityBootstrap).not.toMatch(/\bgit tag\b/);
+  });
+
   it("never accepts a bootstrap manifest as a synchronized release manifest", async () => {
     const root = mkdtempSync(
       join(tmpdir(), "authorization-bootstrap-manifest-"),

@@ -183,6 +183,8 @@ dedicated package-only gate stages only the new package with publish version
 
 ```sh
 git fetch origin tag authorization-identity-v0.0.0
+git verify-tag authorization-identity-v0.0.0
+test "$(git rev-parse 'authorization-identity-v0.0.0^{commit}')" = "afdf3f168d355629b2721512c246c1a18fd54c9d"
 git switch --detach authorization-identity-v0.0.0
 npm ci
 npm run format:check
@@ -202,9 +204,11 @@ a bootstrap-only schema and exactly one package. There is deliberately no
 bootstrap publish command, the tool refuses release/OIDC authority, and the
 stable OIDC publisher rejects its manifest.
 
-After that reviewed source commit is on `origin/main`, create and protect a
-signed annotated `authorization-identity-v0.0.0` tag as its source anchor.
-Publish only the prepared tarball manually:
+The protected signed annotated `authorization-identity-v0.0.0` source tag
+already exists. Fetch it and verify both its approved signature and exact
+`afdf3f168d355629b2721512c246c1a18fd54c9d` target as shown above. If any check
+fails, stop: do not recreate, move, or force the tag. Publish only the prepared
+tarball manually:
 
 ```sh
 npm publish .identity-bootstrap/pegma-authorization-identity-0.0.0.tgz --access public --tag bootstrap
