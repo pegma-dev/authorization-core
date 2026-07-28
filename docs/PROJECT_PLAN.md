@@ -724,12 +724,33 @@ roles, and one protected module using only public documentation.
 
 **Goal:** Stabilize contracts after multiple real consumers.
 
-- Integrate RetireGolden's support system as the second production consumer.
-- Invite at least one non-RetireGolden adapter or application integration.
-- Publish adapter conformance tests.
-- Complete an external security review or focused authorization audit.
-- Document semantic-versioning and deprecation policy.
-- Release `1.0.0` only after the contracts survive multiple consumers.
+- [ ] Integrate RetireGolden's support system as the second production
+      consumer.
+- [x] Invite at least one non-RetireGolden adapter or application integration.
+- [ ] Publish adapter conformance tests.
+- [ ] Complete an external security review or focused authorization audit.
+- [ ] Document semantic-versioning and deprecation policy.
+- [ ] Release `1.0.0` only after the contracts survive multiple consumers.
+
+**First external adapter integration (2026-07-28):** `pegma.dev` pins and runs
+`@pegma/authorization-identity@0.1.2` in its production Cloudflare Worker. The
+adapter projects freshly verified first-party claims before session creation
+and again during secure-session revalidation, failing closed when projection is
+missing or rejected. This is evidence for the first-party identity projection
+and package portability on Workers; it does not yet validate policy resolution,
+roles, entitlements, permission checks, or the storage adapter and therefore is
+not sufficient evidence for `1.0.0`.
+
+**Adapter-conformance implementation boundary (2026-07-28):**
+`@pegma/authorization-core/conformance` now supplies framework-independent
+identity and entitlement case arrays over semantic factory fixtures. The cases
+mechanize exact identity-link behavior, definitive absence versus operational
+failure, principal-isolated request-time entitlements, canonical immutable
+output, invalid-state rejection without fallback, and one matching permission
+allow-and-deny composition without standardizing provider SDK or persistence
+shapes. The subpath is wired into generated API documentation and release
+packaging, but the publication item remains open until a synchronized npm
+release makes it available to external adapters.
 
 ## RetireGolden integration sequence
 

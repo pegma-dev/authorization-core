@@ -85,6 +85,7 @@ Integration documentation:
   [permission naming](docs/PERMISSIONS.md)
 - [Auth0](docs/AUTH0.md), [Stripe](docs/STRIPE.md), and
   [adapter authoring](docs/ADAPTER_AUTHORING.md)
+- [Adapter conformance suites (pending the next release)](docs/ADAPTER_AUTHORING.md#public-conformance-suites)
 - [Role assignments](docs/ROLE_ASSIGNMENTS.md),
   [storage](docs/STORAGE.md), and
   [administrator bootstrap](docs/ADMINISTRATOR_BOOTSTRAP.md)

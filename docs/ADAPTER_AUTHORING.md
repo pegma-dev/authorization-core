@@ -48,7 +48,59 @@ and at least one permission allow plus its matching deny after policy
 resolution. Test that sensitive provider fields never enter the access context
 or logs.
 
-Published adapter conformance suites are a Phase 6 item and do not exist yet.
-Until then, use the public interfaces, the official adapter tests, the
-[getting-started composition](GETTING_STARTED.md), and the
-[security model](SECURITY_MODEL.md) as the review checklist.
+## Public conformance suites
+
+`@pegma/authorization-core/conformance` exports runner-neutral case arrays for
+the provider-neutral `IdentityAdapter` and `EntitlementAdapter` ports. It has no
+test-framework dependency. The conformance entrypoint currently targets Node.js
+22 or newer and uses `node:assert/strict` internally. Register each case with
+the runner already used by the adapter:
+
+```ts
+import {
+  entitlementAdapterConformanceCases,
+  identityAdapterConformanceCases,
+  type EntitlementAdapterConformanceFactory,
+  type IdentityAdapterConformanceFactory,
+} from "@pegma/authorization-core/conformance";
+
+const createIdentityAdapter: IdentityAdapterConformanceFactory = async (
+  fixture,
+) => {
+  // Populate the adapter's real test backend from fixture.links.
+  // Configure fixture.unavailableKeys to reject as operational failures.
+  // If the adapter requires richer verified input, return a semantic-key
+  // resolver that adds that evidence before calling the real adapter.
+  return buildIdentityAdapter(fixture);
+};
+
+const createEntitlementAdapter: EntitlementAdapterConformanceFactory = async (
+  fixture,
+) => {
+  // Translate each semantic state into the adapter's persisted provider facts.
+  // Repeated entries for one principal are successive request-time states.
+  return buildEntitlementAdapter(fixture);
+};
+
+for (const testCase of identityAdapterConformanceCases) {
+  it(testCase.name, () => testCase.run(createIdentityAdapter));
+}
+
+for (const testCase of entitlementAdapterConformanceCases) {
+  it(testCase.name, () => testCase.run(createEntitlementAdapter));
+}
+```
+
+The identity suite fixes only issuer-and-subject link semantics: exact
+case-sensitive tuples, namespace and delimiter separation, multiple links to
+one host principal, definitive absence, and operational rejection. The
+entitlement suite fixes principal isolation, canonical immutable host names,
+authoritative empty state, request-time reload without fallback, rejection of
+missing or invalid state, and a matching permission allow-and-deny composition.
+
+Factories translate those semantic fixtures into their real backend. The suite
+does not standardize provider claims, SDK objects, webhook payloads, lifecycle
+timestamps, persistence schemas, or logging APIs. Provider-specific tests must
+still cover verification, malformed provider evidence, sensitive-field
+exclusion from logs, callback ordering and deduplication, complete pagination,
+customer binding, and the exact staleness calculation.
