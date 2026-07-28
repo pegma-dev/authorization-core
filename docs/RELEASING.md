@@ -1,6 +1,6 @@
 # Release operations
 
-Authorization Core releases all seven public workspace packages at one common
+Authorization Core releases all eight public workspace packages at one common
 version. No package is published by merging a pull request. Publication is a
 separate operator action after review.
 
@@ -14,8 +14,8 @@ name exists.
 
 The release tool fails before packing unless all of these remain true:
 
-- the public inventory is exactly contracts, Auth0, core, policy, Stripe,
-  storage, and tokens;
+- the public inventory is exactly contracts, Auth0, first-party Identity, core,
+  policy, Stripe, storage, and tokens;
 - every root and workspace manifest has one stable semantic version;
 - every internal `@pegma/authorization-*` dependency uses that exact version;
 - the lockfile matches the manifests;
@@ -164,6 +164,64 @@ Test signer rotation with a disposable signed tag before removing an old key.
 Confirm that `bootstrap` is not the default npm dist-tag for any package. Leave
 the package names otherwise untouched until the `0.1.0` release.
 
+## Bootstrap for the new Identity adapter package
+
+`@pegma/authorization-identity` was not one of the seven names reserved by the
+2026-07-27 bootstrap. Before the package joins an advertised synchronized
+release, it needs the same one-time name reservation and trusted-publisher
+configuration. This does not reopen or alter the completed seven-package
+`v0.0.0` ceremony.
+
+The repository stays internally consistent: the root and all eight source
+packages remain at common version `0.1.0`, and the new package keeps its exact
+`@pegma/authorization-contracts@0.1.0` dependency. The dedicated package-only
+gate stages only the new package with publish version `0.0.0`; no intermediate
+version-mismatched source tree is needed:
+
+```sh
+npm ci
+npm run format:check
+npm run check
+npm test
+npm run identity-bootstrap:check
+npm run identity-bootstrap:pack -- -- --require-clean --require-main-ancestor --output .identity-bootstrap
+npm run identity-bootstrap:registry:check -- -- --manifest .identity-bootstrap/identity-bootstrap-manifest.json
+```
+
+Run the normal gate and the package-only gate on Node 22 and 24. The bootstrap
+tool verifies common-version source metadata and lockfile state, the exact
+single dependency, package-local `prepack`, allowlisted files, inline-source
+maps, dependency-free portable ESM import, a clean consumer install, production
+dependency audit, tarball hashes, and npm registry integrity. Its manifest has
+a bootstrap-only schema and exactly one package. There is deliberately no
+bootstrap publish command, the tool refuses release/OIDC authority, and the
+stable OIDC publisher rejects its manifest.
+
+After that reviewed source commit is on `origin/main`, create and protect a
+signed annotated `authorization-identity-v0.0.0` tag as its source anchor.
+Publish only the prepared tarball manually:
+
+```sh
+npm publish .identity-bootstrap/pegma-authorization-identity-0.0.0.tgz --access public --tag bootstrap
+```
+
+For a package's first-ever publication, npm forces `latest` to the first
+version even when `--tag bootstrap` was requested. An immediate attempt to
+remove that only `latest` tag can fail with HTTP 400. Do not unpublish, retry
+with different bytes, or treat tag removal as a bootstrap prerequisite.
+Verify the `0.0.0` integrity, ensure the `bootstrap` tag points to it, and
+configure the same `publish.yml` / `npm-publish` trusted publisher described
+above.
+
+Keep the unavoidable `latest=0.0.0` window as short as operationally possible.
+Immediately prepare the next reviewed synchronized `0.1.x` release (normally
+`0.1.1`, because the protected `v0.1.0` tag already exists) across all eight
+packages. Its OIDC publication moves the new package's `latest` tag to that
+advertised version while the seven existing versions verify and skip or advance
+according to the release version. Confirm `latest` is the new `0.1.x`,
+`bootstrap` remains `0.0.0`, and both registry integrities match. Do not create
+a GitHub release for the package-name reservation itself.
+
 ## First advertised release and later releases
 
 The first advertised release completed on 2026-07-27. The protected signed
@@ -217,7 +275,7 @@ Only the minimal protected `npm-publish` job receives `id-token: write`. It
 runs pinned checkout, Node setup, and artifact-download actions, installs no
 dependencies, uses the reviewed Node 24.18.0 runtime whose bundled npm supports
 trusted publishing (npm 11.5.1 or newer), rechecks the event commit, manifest
-tag, and tarball hashes, then publishes contracts first, followed by the four
+tag, and tarball hashes, then publishes contracts first, followed by the five
 contracts-only consumers, storage, and tokens. The downloaded Actions artifact
 also fails on a transport digest mismatch.
 

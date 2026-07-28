@@ -1,51 +1,74 @@
 # The Identity adapter: `@pegma/authorization-identity`
 
-Decided 2026-07-27 as a plan; implementation waits for `@pegma/identity`
-to exist (its plan: <https://github.com/pegma-dev/identity/blob/main/docs/PROJECT_PLAN.md> - that repository's plan, not this one's). This is the
-decision record for the adapter linking Pegma's first-party identity
-component into Authorization Core.
+Implemented 2026-07-27 against the current structural
+`@pegma/identity` verified-claims contract. This is the decision record for
+linking Pegma's first-party identity component into Authorization Core.
 
 ## Why an adapter at all
 
-`@pegma/identity` deliberately does NOT depend on
-`@pegma/authorization-contracts` — an identity provider that imports the
-authorization layer couples the two halves this library exists to keep
-apart. So the projection from identity's verified claims to an
-`IdentityLinkKey` lives here, beside `packages/auth0`, in the same shape:
-already-verified claims in, frozen `{ issuer, subject }` out, no
-verification, no network, a few dozen lines. First-party identity gets no
-architectural shortcut for being ours: it enters through the same door as
-Auth0 and Entra, which is precisely what makes running it ALONGSIDE an
-external provider (both linked to one principal) work with no special
-cases.
+`@pegma/identity` deliberately does not depend on
+`@pegma/authorization-contracts`. An identity provider that imports the
+authorization layer couples the two halves this library exists to keep apart.
+The projection from identity's verified claims to an `IdentityLinkKey`
+therefore lives here, beside `packages/auth0`: already-verified claims in,
+frozen `{ issuer, subject }` out, with no verification, network access,
+storage, or identity resolution.
 
-## The decisions
+First-party identity gets no architectural shortcut for being ours. It enters
+through the same door as Auth0 and Entra, which lets a host link identities
+from multiple providers to one principal without special cases.
 
-- **`issuer` is a host-configured stable string** (identity's claims carry
-  it verbatim). It must never change once users exist — renaming an issuer
-  is mass identity fragmentation, the same trap the Entra record pins for
-  v1/v2 profiles. The adapter validates presence and nonblankness, exactly
-  like the Auth0 adapter's claim checks; choosing it wisely (an https URL
-  under the host's domain) is the host's one-time job, documented loudly.
-- **`subject` is identity's stable user id** (its `PrincipalId` value,
-  projected verbatim as an opaque string). The adapter does not know or
-  care that it happens to equal a storage principal — through this door it
-  is a provider subject like any other.
-- **Nothing else crosses.** `emailVerified` and contact email stay on the
-  identity side; the core invariant (email is never an authorization key)
-  already forbids them here, and the adapter's surface makes the refusal
-  structural.
+## Contract
 
-## Shape of the work
+- `issuer` is a host-configured stable string carried verbatim in identity's
+  claims. It must not change after users exist because an issuer rename
+  fragments every existing identity link.
+- `subject` is identity's stable `PrincipalId`, treated here as an opaque
+  provider subject and preserved verbatim.
+- The accepted structural shape is exactly
+  `{ issuer: string, subject: PrincipalId, emailVerified: true }`. This package
+  exports that structural `VerifiedIdentityClaims` interface but deliberately
+  does not depend on `@pegma/identity`; either package can evolve and publish
+  independently while TypeScript proves the shapes remain compatible.
+- Every field must be an enumerable own data property. Inherited fields,
+  accessors, symbols, extra fields, and exotic ordinary containers are
+  rejected. Descriptor-based validation does not execute getters on ordinary
+  objects.
+- Portable JavaScript cannot identify a `Proxy` without invoking reflective
+  traps, and a transparent proxy is indistinguishable from its target. The
+  adapter therefore makes no no-trap or blanket proxy-rejection promise:
+  throwing reflection traps become the same generic malformed-claims error,
+  while a transparent proxy may pass. Trusted hosts should pass the plain
+  verified-claims snapshot produced by the identity boundary, not a proxy.
+- `issuer` and `subject` must be nonblank, well-formed Unicode strings. The
+  issuer is limited to 1,024 UTF-16 code units and the subject to 512. C0, DEL,
+  and C1 control characters are rejected. Otherwise both identifiers are
+  opaque and preserved exactly.
+- `emailVerified` is an eligibility requirement, not authorization data. It
+  must be exactly `true` and is omitted from the output. Email and all other
+  contact data are not accepted, so they cannot leak into an identity-link
+  key.
 
-`packages/identity-link` (publishing `@pegma/authorization-identity`):
-`identityLinkKeyFromVerifiedIdentityClaims({ iss, sub })`, the same
-malformed-container rejections the Auth0 suite pins, tests mirroring
-`packages/auth0/src/index.test.ts`. Smaller than this document.
+## Usage
 
-## Timing
+```ts
+import { identityLinkKeyFromVerifiedIdentityClaims } from "@pegma/authorization-identity";
 
-After `@pegma/identity` Phase 2 exists to emit real claims, and never
-before this library's Phase 5 publish completes. The Entra record's gate
-logic applies verbatim: plan now so the decisions are settled; implement
-on pull.
+const key = identityLinkKeyFromVerifiedIdentityClaims({
+  issuer: "https://identity.example.test",
+  subject: verifiedPrincipalId,
+  emailVerified: true,
+});
+```
+
+The host calls this only after its trusted identity flow has produced verified
+claims. The adapter does not authenticate sessions, resolve or mutate
+principal links, or persist anything.
+
+## Publication
+
+The package source is part of the synchronized Authorization Core package set.
+The npm name is new, so it still requires a reviewed one-time `0.0.0`
+non-default-tag bootstrap and trusted-publisher configuration before it can
+join an advertised synchronized release. See
+[RELEASING.md](RELEASING.md#bootstrap-for-the-new-identity-adapter-package).

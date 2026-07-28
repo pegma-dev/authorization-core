@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  IDENTITY_BOOTSTRAP_PACKAGE,
   RELEASE_PACKAGES,
   decidePublication,
   parseArguments,
+  validateIdentityBootstrapRepository,
   validateReleaseTag,
   validateRepository,
+  verifyPreparedReleaseManifest,
 } from "../scripts/release-packages.mjs";
 
 const git = process.platform === "win32" ? "git.exe" : "git";
@@ -32,6 +35,7 @@ describe("release package metadata", () => {
     expect(RELEASE_PACKAGES.map(({ name }) => name)).toEqual([
       "@pegma/authorization-contracts",
       "@pegma/authorization-auth0",
+      "@pegma/authorization-identity",
       "@pegma/authorization-core",
       "@pegma/authorization-policy",
       "@pegma/authorization-stripe",
@@ -44,6 +48,60 @@ describe("release package metadata", () => {
     await expect(validateRepository()).resolves.toMatchObject({
       version: "0.1.0",
     });
+  });
+
+  it("keeps the identity name-reservation bootstrap package-only and version-split", async () => {
+    expect(IDENTITY_BOOTSTRAP_PACKAGE).toEqual({
+      directory: "identity-link",
+      name: "@pegma/authorization-identity",
+      sourceVersion: "0.1.0",
+      version: "0.0.0",
+    });
+    await expect(validateIdentityBootstrapRepository()).resolves.toMatchObject({
+      sourceVersion: "0.1.0",
+      version: "0.0.0",
+    });
+    await expect(
+      validateIdentityBootstrapRepository({ releaseTag: "v0.1.0" }),
+    ).rejects.toThrow("refuses release or OIDC authority");
+
+    const rootManifest = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(rootManifest.scripts["identity-bootstrap:pack"]).toContain(
+      "identity-bootstrap-pack",
+    );
+    expect(rootManifest.scripts["identity-bootstrap:registry:check"]).toContain(
+      "identity-bootstrap-registry-check",
+    );
+    expect(rootManifest.scripts["identity-bootstrap:publish"]).toBeUndefined();
+  });
+
+  it("never accepts a bootstrap manifest as a synchronized release manifest", async () => {
+    const root = mkdtempSync(
+      join(tmpdir(), "authorization-bootstrap-manifest-"),
+    );
+    try {
+      const manifestPath = join(root, "identity-bootstrap-manifest.json");
+      writeFileSync(
+        manifestPath,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          kind: "authorization-identity-package-bootstrap",
+          sourceVersion: "0.1.0",
+          version: "0.0.0",
+          gitCommit: "0".repeat(40),
+          package: {
+            name: "@pegma/authorization-identity",
+          },
+        })}\n`,
+      );
+      await expect(verifyPreparedReleaseManifest(manifestPath)).rejects.toThrow(
+        "invalid package inventory",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("requires a stable release tag that exactly matches the common version", async () => {
@@ -178,6 +236,7 @@ describe("release source authentication", () => {
     expect(publish).not.toContain("npm test");
     expect(publish).not.toContain("release:pack");
     expect(publish).toContain("npm run release:publish");
+    expect(workflow).not.toContain("identity-bootstrap");
     expect(workflow).not.toContain("github.run_attempt");
     expect(workflow).toContain("retention-days: 30");
   });

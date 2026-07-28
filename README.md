@@ -6,8 +6,10 @@
 Provider-neutral roles, entitlements, and permissions for SaaS applications.
 
 > [!IMPORTANT]
-> Authorization Core is in early `0.x` development. Its public API is not yet stable and
-> its packages have not been published.
+> Authorization Core is in early `0.x` development and its public API is not
+> yet stable. The original seven packages are published at `0.1.0`; the new
+> `@pegma/authorization-identity` package awaits its one-time npm bootstrap
+> before its first advertised release.
 
 ## Why Authorization Core?
 
@@ -46,6 +48,7 @@ Application roles ──┘
 | `@pegma/authorization-core`      | Pure permission resolution and access decisions |
 | `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics     |
 | `@pegma/authorization-auth0`     | Verified Auth0 claims to identity-link keys     |
+| `@pegma/authorization-identity`  | Verified first-party claims to identity keys    |
 | `@pegma/authorization-stripe`    | Trusted Stripe IDs to active entitlements       |
 | `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core`    |
 | `@pegma/authorization-tokens`    | Signed one-use grants, JWKS, and verification   |

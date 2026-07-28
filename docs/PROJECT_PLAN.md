@@ -198,6 +198,7 @@ The repository will stay a monorepo while the public contracts mature.
 | `@pegma/authorization-core`      | Pure resolution and access decisions         | Foundation     |
 | `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics  | Phase 1        |
 | `@pegma/authorization-auth0`     | Verified Auth0 `iss`/`sub` to identity key   | Phase 2        |
+| `@pegma/authorization-identity`  | First-party claims to an identity-link key   | Phase 6        |
 | `@pegma/authorization-stripe`    | Stripe state to active entitlements          | Phase 2        |
 | `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core` | Phase 3        |
 | `@pegma/authorization-tokens`    | Short-lived signed access grants and JWKS    | Phase 4        |
@@ -205,13 +206,14 @@ The repository will stay a monorepo while the public contracts mature.
 Packages should be created only when implementation begins. Empty adapter
 packages make compatibility promises without supplying value.
 
-Two further identity adapters are decided but deliberately unimplemented,
-each with its own decision record and gates: `@pegma/authorization-entra`
-([docs/ENTRA_ADAPTER.md](ENTRA_ADAPTER.md) — after Phase 5, on a real
-consumer) and `@pegma/authorization-identity`
-([docs/IDENTITY_ADAPTER.md](IDENTITY_ADAPTER.md) — after Phase 5 and after
-`@pegma/identity` exists to emit claims). Both keep the auth0 package's
-pure-projection shape; neither starts before its gates open.
+The first-party `@pegma/authorization-identity` adapter is implemented after
+its Phase 5 and real-claims gates opened; its exact projection and publication
+boundary are recorded in
+[docs/IDENTITY_ADAPTER.md](IDENTITY_ADAPTER.md). The
+`@pegma/authorization-entra` adapter remains decided but deliberately
+unimplemented until a real post-Phase-5 consumer needs it; see
+[docs/ENTRA_ADAPTER.md](ENTRA_ADAPTER.md). Both keep the Auth0 package's
+pure-projection boundary.
 
 Other providers should be implementable outside this repository by depending
 on public contracts and running a published conformance suite.
@@ -684,6 +686,22 @@ order. Registry verification matched every published integrity to the prepared
 manifest, retained `0.0.0` only under `bootstrap`, selected `0.1.0` as `latest`,
 and confirmed SLSA provenance attestations. The Phase 5 publication deliverable
 and exit criterion are complete.
+
+**First-party identity adapter boundary (2026-07-27):** The repository now has
+an eighth public package, `@pegma/authorization-identity`. It structurally
+matches identity's verified
+`{ issuer: string, subject: PrincipalId, emailVerified: true }` claims without
+introducing a package dependency, accepts only exact enumerable own data
+properties, avoids executing ordinary-object getters, and emits only a fresh
+frozen `{ issuer, subject }` key. Portable JavaScript cannot identify proxies
+without reflection traps, so the contract honestly makes no zero-trap or
+blanket proxy-rejection promise. Its bounded opaque identifiers reject blank,
+control-bearing, overlong, and malformed-Unicode values; contact data cannot
+enter the result. The generated API and synchronized release inventory include
+all eight source packages. A package-only bootstrap gate prepares the new npm
+name at `0.0.0` without changing the repository's common `0.1.0` source
+version, and cannot enter the OIDC publisher. The name remains unpublished
+until that bootstrap and trusted-publisher setup are complete.
 
 **Exit criterion:** A new SaaS project can integrate identity, billing, staff
 roles, and one protected module using only public documentation.
