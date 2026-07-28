@@ -61,6 +61,9 @@ describe("release package metadata", () => {
       "RELEASE_TAG",
       "RELEASE_COMMIT",
       "RELEASE_PRERELEASE",
+      "GITHUB_EVENT_NAME",
+      "ACTIONS_ID_TOKEN_REQUEST_URL",
+      "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
     ] as const;
     const releaseEnvironment = new Map(
       releaseEnvironmentKeys.map((key) => [key, process.env[key]]),
