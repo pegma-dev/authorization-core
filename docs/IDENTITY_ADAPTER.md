@@ -67,8 +67,10 @@ principal links, or persist anything.
 
 ## Publication
 
-The package source is part of the synchronized Authorization Core package set.
-The npm name is new, so it still requires a reviewed one-time `0.0.0`
-non-default-tag bootstrap and trusted-publisher configuration before it can
-join an advertised synchronized release. See
+The package is published as `@pegma/authorization-identity@0.1.2` and is part
+of the synchronized Authorization Core package set. Its reviewed one-time
+`0.0.0` name reservation remains under the non-default `bootstrap` tag; the
+failed `v0.1.1` workflow stopped before packing or publishing. The corrected
+signed `v0.1.2` release is the adapter's first advertised publication, and
+pegma.dev composes it with `@pegma/identity@0.1.0`. See
 [RELEASING.md](RELEASING.md#bootstrap-for-the-new-identity-adapter-package).
