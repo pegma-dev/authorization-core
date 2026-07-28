@@ -7,9 +7,9 @@ Provider-neutral roles, entitlements, and permissions for SaaS applications.
 
 > [!IMPORTANT]
 > Authorization Core is in early `0.x` development and its public API is not
-> yet stable. The original seven packages are published at `0.1.0`; the new
-> `@pegma/authorization-identity` package awaits its one-time npm bootstrap
-> before its first advertised release.
+> yet stable. The original seven packages are published at `0.1.0`;
+> `@pegma/authorization-identity` joins them in the synchronized `0.1.1`
+> release after its one-time npm bootstrap and trusted-publisher setup.
 
 ## Why Authorization Core?
 
