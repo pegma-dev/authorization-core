@@ -26,6 +26,9 @@
     "release:pack": "node scripts/release-packages.mjs pack",
     "release:publish": "node scripts/release-packages.mjs publish",
     "release:registry:check": "node scripts/release-packages.mjs registry-check",
+    "identity-bootstrap:check": "node scripts/release-packages.mjs identity-bootstrap-check",
+    "identity-bootstrap:pack": "node scripts/release-packages.mjs identity-bootstrap-pack",
+    "identity-bootstrap:registry:check": "node scripts/release-packages.mjs identity-bootstrap-registry-check",
     "test": "npm run build && vitest run"
   },
   "devDependencies": {

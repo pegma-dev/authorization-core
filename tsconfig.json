@@ -11,6 +11,9 @@
       "path": "./packages/auth0"
     },
     {
+      "path": "./packages/identity-link"
+    },
+    {
       "path": "./packages/stripe"
     },
     {
