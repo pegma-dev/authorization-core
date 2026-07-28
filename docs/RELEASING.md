@@ -42,7 +42,7 @@ protected signed annotated Git tag for the audited bootstrap commit, but do not
 create a GitHub release for `0.0.0` and do not use the `latest` dist-tag. The
 bootstrap packages intentionally have no GitHub provenance; the signed tag is
 their durable source anchor. They exist only to permit trusted-publisher
-configuration. `0.1.0` will be the first advertised release.
+configuration. `0.1.0` became the first advertised release on 2026-07-27.
 
 ### 1. Prepare the reviewed bytes
 
@@ -165,6 +165,13 @@ Confirm that `bootstrap` is not the default npm dist-tag for any package. Leave
 the package names otherwise untouched until the `0.1.0` release.
 
 ## First advertised release and later releases
+
+The first advertised release completed on 2026-07-27. The protected signed
+annotated `v0.1.0` tag targets
+`c5186b8258a786641da15b9f47404630c4374aee`; the release workflow published all
+seven `0.1.0` packages through OIDC with exact prepared integrity and
+provenance. The procedure remains below as the release contract for later
+versions.
 
 The `0.1.0` release pull request:
 

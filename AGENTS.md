@@ -65,15 +65,16 @@ non-default `bootstrap` dist-tag, configure every package's trusted publisher,
 then make `0.1.0` the first advertised OIDC release.
 
 The one-time `0.0.0` package-name bootstrap is published under the non-default
-`bootstrap` dist-tag, and trusted publishing is configured. `0.1.0` is the
-first advertised release.
+`bootstrap` dist-tag, and trusted publishing is configured. The signed
+`v0.1.0` GitHub release published all seven `0.1.0` packages through OIDC with
+provenance on 2026-07-27.
 
 ## Where things stand
 
-Foundation and Phases 1 through 3 are complete: contracts, the pure resolver,
-policy parsing and diagnostics, Auth0 identity translation, Stripe entitlement
-translation, the role-assignment lifecycle with audit, administrator bootstrap,
-and fast revocation with cache bounds. Phase 4 is signed access grants.
+Foundation and Phases 1 through 5 are complete, including signed access grants,
+the reference integration, public documentation, and the first advertised
+release. Phase 6 is integration feedback and contract stabilization; do not
+expand the shared API speculatively.
 
 Three things about the storage migration are worth knowing before you touch the
 lifecycle code, all deliberate:
