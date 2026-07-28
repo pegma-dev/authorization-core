@@ -72,9 +72,11 @@ provenance on 2026-07-27.
 
 `@pegma/authorization-identity` is the eighth package. Its signed
 `authorization-identity-v0.0.0` source tag targets merged commit
-`afdf3f168d355629b2721512c246c1a18fd54c9d`; complete its package-only name
-reservation and trusted-publisher setup before creating the synchronized
-`v0.1.1` release that first advertises it.
+`afdf3f168d355629b2721512c246c1a18fd54c9d`; its package-only `0.0.0` name
+reservation is published under `bootstrap`. The synchronized `v0.1.1`
+workflow stopped in its unprivileged test step before packing or publishing
+anything. Version `0.1.2` corrects only that release test and is the adapter's
+first advertised stable publication.
 
 ## Where things stand
 

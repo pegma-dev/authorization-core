@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-contracts",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Provider-neutral access and policy contracts for Authorization Core.",
   "license": "MIT",
   "type": "module",

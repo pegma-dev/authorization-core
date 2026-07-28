@@ -223,11 +223,12 @@ configure the same `publish.yml` / `npm-publish` trusted publisher described
 above.
 
 Keep the unavoidable `latest=0.0.0` window as short as operationally possible.
-The reviewed synchronized `0.1.1` preparation across all eight packages is the
-correction release because the protected `v0.1.0` tag already exists. Its OIDC
-publication moves the new package's `latest` tag to `0.1.1` while publishing
-the synchronized version of the seven existing packages. Confirm `latest` is
-`0.1.1`, `bootstrap` remains `0.0.0`, and both registry integrities match. Do
+The synchronized `v0.1.1` workflow stopped in its unprivileged test step before
+tarball preparation, artifact upload, or OIDC publication. No `0.1.1` package
+version was published. The focused synchronized `0.1.2` correction therefore
+moves the new package's `latest` tag to `0.1.2` while publishing the
+synchronized version of the seven existing packages. Confirm `latest` is
+`0.1.2`, `bootstrap` remains `0.0.0`, and both registry integrities match. Do
 not create a GitHub release for the package-name reservation itself.
 
 ## First advertised release and later releases
@@ -251,13 +252,12 @@ The `0.1.0` release pull request:
 External dependency versions are independent and must not be changed merely to
 match this repository's release.
 
-The `0.1.1` release pull request follows the same invariant with eight
-workspaces: root and all packages move from `0.1.0` to `0.1.1`, and every
-internal `@pegma/authorization-*` dependency moves to exact `0.1.1`. It is the
-first advertised release for `@pegma/authorization-identity`. The pull request
-may merge before the manual `0.0.0` name reservation, but do not create or push
-`v0.1.1` and do not create the GitHub release until the reservation integrity
-is exact and the Identity trusted publisher is configured.
+The `0.1.1` release pull request followed the same invariant with eight
+workspaces, but its release-event test run failed before any package was
+prepared or published. The `0.1.2` correction changes only the release test,
+the common synchronized version, exact internal dependency versions, lockfile,
+and these release records. It is the first advertised stable release for
+`@pegma/authorization-identity`; there are no runtime or public API changes.
 
 After that pull request is merged, identify the exact `origin/main` commit.
 With the same protected `v*` tag ruleset, create and push a signed annotated tag
@@ -278,9 +278,9 @@ git verify-tag v0.1.0
 gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
 ```
 
-For this prepared release, use `v0.1.1` consistently in those commands after
-the reviewed release pull request merges and the Identity bootstrap
-prerequisites above are complete. Never move the existing `v0.1.0` tag.
+For this prepared release, use `v0.1.2` consistently in those commands after
+the reviewed release pull request merges. Never move the existing `v0.1.0` or
+`v0.1.1` tags.
 
 The workflow's unprivileged preparation job checks out the fully qualified tag,
 requires an approved valid SSH-signed annotated tag, and proves that the tag

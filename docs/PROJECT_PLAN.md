@@ -4,8 +4,9 @@
 
 **Stage:** Phase 5 complete; Phase 6 integration feedback and stabilization
 next (the signed `v0.1.0` release published the original seven packages through
-OIDC with provenance on 2026-07-27; synchronized `v0.1.1` release preparation
-adds first-party Identity as the eighth; `0.x` public API remains unstable)
+OIDC with provenance on 2026-07-27; synchronized `v0.1.2` corrects the
+pre-publish `v0.1.1` release-test failure and first advertises Identity as the
+eighth package; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -704,16 +705,17 @@ name at `0.0.0` without changing the repository's common `0.1.0` source
 version, and cannot enter the OIDC publisher. The name remains unpublished
 until that bootstrap and trusted-publisher setup are complete.
 
-**First advertised Identity release preparation boundary (2026-07-28):** The
+**First advertised Identity release correction boundary (2026-07-28):** The
 signed annotated `authorization-identity-v0.0.0` source tag targets merged
-`main` commit `afdf3f168d355629b2721512c246c1a18fd54c9d`. The synchronized
-`0.1.1` preparation advances the root, all eight package manifests, every exact
-internal Authorization dependency, the lockfile, and release notes together.
-The preparation pull request does not publish the still-unreserved npm name,
-create `v0.1.1`, or create a GitHub release. The operator must complete the
-package-only `0.0.0` reservation from its signed source tag and configure its
-trusted publisher before the protected signed `v0.1.1` GitHub release can make
-Identity's first advertised publication through OIDC.
+`main` commit `afdf3f168d355629b2721512c246c1a18fd54c9d`, and its exact `0.0.0`
+artifact is reserved under the manual-only `bootstrap` tag. The synchronized
+`v0.1.1` workflow stopped in the unprivileged preparation job when a bootstrap
+validation test observed release-event environment variables; tarball
+preparation, artifact upload, and the OIDC publisher were all skipped, so no
+`0.1.1` npm version exists. Version `0.1.2` isolates and restores those
+variables around the intended root-version assertion, advances all eight
+manifests and exact internal dependencies together, and becomes Identity's
+first advertised stable publication. It changes no runtime or public API.
 
 **Exit criterion:** A new SaaS project can integrate identity, billing, staff
 roles, and one protected module using only public documentation.

@@ -46,7 +46,7 @@ describe("release package metadata", () => {
 
   it("validates the repository, package manifests, and lockfile together", async () => {
     await expect(validateRepository()).resolves.toMatchObject({
-      version: "0.1.1",
+      version: "0.1.2",
     });
   });
 
@@ -57,11 +57,27 @@ describe("release package metadata", () => {
       sourceVersion: "0.1.0",
       version: "0.0.0",
     });
-    await expect(validateIdentityBootstrapRepository()).rejects.toThrow(
-      "identity bootstrap source requires root 0.1.0, found 0.1.1",
+    const releaseEnvironmentKeys = [
+      "RELEASE_TAG",
+      "RELEASE_COMMIT",
+      "RELEASE_PRERELEASE",
+    ] as const;
+    const releaseEnvironment = new Map(
+      releaseEnvironmentKeys.map((key) => [key, process.env[key]]),
     );
+    try {
+      for (const key of releaseEnvironmentKeys) delete process.env[key];
+      await expect(validateIdentityBootstrapRepository()).rejects.toThrow(
+        "identity bootstrap source requires root 0.1.0, found 0.1.2",
+      );
+    } finally {
+      for (const [key, value] of releaseEnvironment) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
     await expect(
-      validateIdentityBootstrapRepository({ releaseTag: "v0.1.1" }),
+      validateIdentityBootstrapRepository({ releaseTag: "v0.1.2" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -128,12 +144,12 @@ describe("release package metadata", () => {
   });
 
   it("requires a stable release tag that exactly matches the common version", async () => {
-    await expect(validateRepository({ releaseTag: "v0.1.2" })).rejects.toThrow(
-      "release tag must be v0.1.1",
+    await expect(validateRepository({ releaseTag: "v0.1.3" })).rejects.toThrow(
+      "release tag must be v0.1.2",
     );
     await expect(
       validateRepository({
-        releaseTag: "v0.1.1",
+        releaseTag: "v0.1.2",
         releasePrerelease: true,
       }),
     ).rejects.toThrow("prereleases cannot publish packages");
