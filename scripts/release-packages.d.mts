@@ -30,6 +30,10 @@ export interface ReleaseCommandOptions extends ValidationOptions {
 export const RELEASE_PACKAGES: readonly ReleasePackageDefinition[];
 export const IDENTITY_BOOTSTRAP_PACKAGE: IdentityBootstrapPackageDefinition;
 
+export function releaseImportSpecifiers(
+  definitions?: readonly ReleasePackageDefinition[],
+): string[];
+
 export function parseArguments(
   arguments_: readonly string[],
 ): ReleaseCommandOptions;

@@ -12,3 +12,29 @@ The host remains responsible for identity verification, authoritative data
 loading, resource relationships, and server-side enforcement.
 
 See the [getting-started guide](https://github.com/pegma-dev/authorization-core/blob/main/docs/GETTING_STARTED.md).
+
+## Adapter conformance
+
+The `@pegma/authorization-core/conformance` subpath exports
+framework-independent identity and entitlement adapter cases. Adapter authors
+translate the suite's semantic fixtures into their provider and persistence
+model, then register the cases with their existing test runner:
+
+```ts
+import {
+  entitlementAdapterConformanceCases,
+  identityAdapterConformanceCases,
+} from "@pegma/authorization-core/conformance";
+
+for (const testCase of identityAdapterConformanceCases) {
+  it(testCase.name, () => testCase.run(createIdentityAdapter));
+}
+
+for (const testCase of entitlementAdapterConformanceCases) {
+  it(testCase.name, () => testCase.run(createEntitlementAdapter));
+}
+```
+
+See the
+[adapter-authoring guide](https://github.com/pegma-dev/authorization-core/blob/main/docs/ADAPTER_AUTHORING.md)
+for the factory contracts and the boundary that remains provider-specific.

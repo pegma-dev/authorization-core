@@ -125,8 +125,11 @@ Loads currently active host entitlement names for one stable principal.
 
 Input is principal-keyed request context, not transient provider facts.
 Webhook-derived state is loaded request-time from trusted host persistence.
-Output contains entitlements only: roles, permissions, provider lifecycle
-statuses, and persistence mechanics remain outside this contract.
+Missing, stale, future, corrupt, and operationally unavailable state rejects
+without last-known-good fallback. Output is a detached, frozen, sorted,
+duplicate-free list of exact host entitlement names. Roles, permissions,
+provider lifecycle statuses, and persistence mechanics remain outside this
+contract.
 
 ```ts
 export interface EntitlementAdapter<

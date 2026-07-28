@@ -10,6 +10,9 @@
       "@pegma/authorization-auth0": ["./packages/auth0/src/index.ts"],
       "@pegma/authorization-contracts": ["./packages/contracts/src/index.ts"],
       "@pegma/authorization-core": ["./packages/core/src/index.ts"],
+      "@pegma/authorization-core/conformance": [
+        "./packages/core/src/conformance.ts"
+      ],
       "@pegma/authorization-identity": [
         "./packages/identity-link/src/index.ts"
       ],

@@ -47,8 +47,8 @@ export const RELEASE_PACKAGES = [
   {
     directory: "core",
     name: "@pegma/authorization-core",
-    exports: ["."],
-    modules: ["index"],
+    exports: [".", "./conformance"],
+    modules: ["conformance", "index"],
   },
   {
     directory: "policy",
@@ -84,6 +84,16 @@ export const RELEASE_PACKAGES = [
     ],
   },
 ];
+
+export function releaseImportSpecifiers(definitions = RELEASE_PACKAGES) {
+  return definitions.flatMap((definition) =>
+    definition.exports.map((exportPath) =>
+      exportPath === "."
+        ? definition.name
+        : `${definition.name}/${exportPath.slice(2)}`,
+    ),
+  );
+}
 
 export const IDENTITY_BOOTSTRAP_PACKAGE = Object.freeze({
   directory: "identity-link",
@@ -551,10 +561,7 @@ async function smokeTestTarballs(root, tarballs) {
       ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...tarballs],
       { cwd: consumerRoot },
     );
-    const imports = [
-      ...RELEASE_PACKAGES.map(({ name }) => name),
-      "@pegma/authorization-tokens/testing",
-    ];
+    const imports = releaseImportSpecifiers();
     const smoke = `await Promise.all(${JSON.stringify(imports)}.map((name) => import(name)));`;
     run(process.execPath, ["--input-type=module", "--eval", smoke], {
       cwd: consumerRoot,

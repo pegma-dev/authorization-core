@@ -97,7 +97,9 @@ const entitlementAdapter: EntitlementAdapter = {
     if (state === undefined) {
       throw new Error("persisted entitlement state is missing");
     }
-    return state.status === "active" ? [`plan.${state.plan}`] : [];
+    return Object.freeze(
+      state.status === "active" ? [`plan.${state.plan}`] : [],
+    );
   },
 };
 

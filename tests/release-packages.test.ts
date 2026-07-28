@@ -8,6 +8,7 @@ import {
   RELEASE_PACKAGES,
   decidePublication,
   parseArguments,
+  releaseImportSpecifiers,
   validateIdentityBootstrapRepository,
   validateReleaseTag,
   validateRepository,
@@ -41,6 +42,21 @@ describe("release package metadata", () => {
       "@pegma/authorization-stripe",
       "@pegma/authorization-storage",
       "@pegma/authorization-tokens",
+    ]);
+  });
+
+  it("smoke-imports every declared public package export", () => {
+    expect(releaseImportSpecifiers()).toEqual([
+      "@pegma/authorization-contracts",
+      "@pegma/authorization-auth0",
+      "@pegma/authorization-identity",
+      "@pegma/authorization-core",
+      "@pegma/authorization-core/conformance",
+      "@pegma/authorization-policy",
+      "@pegma/authorization-stripe",
+      "@pegma/authorization-storage",
+      "@pegma/authorization-tokens",
+      "@pegma/authorization-tokens/testing",
     ]);
   });
 

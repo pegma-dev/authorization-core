@@ -7,6 +7,7 @@ This reference is generated deterministically from the repository's declared pub
 - [`@pegma/authorization-auth0`](authorization-auth0.md)
 - [`@pegma/authorization-contracts`](authorization-contracts.md)
 - [`@pegma/authorization-core`](authorization-core.md)
+- [`@pegma/authorization-core/conformance`](authorization-core-conformance.md)
 - [`@pegma/authorization-identity`](authorization-identity.md)
 - [`@pegma/authorization-policy`](authorization-policy.md)
 - [`@pegma/authorization-storage`](authorization-storage.md)
