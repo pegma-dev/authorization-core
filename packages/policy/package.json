@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-policy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Policy parsing, validation, and diagnostics for Authorization Core.",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "directory": "packages/policy"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.1.0"
+    "@pegma/authorization-contracts": "0.1.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

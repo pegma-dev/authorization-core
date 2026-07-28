@@ -62,12 +62,19 @@ the synchronized workspace package set with provenance attestations. A
 brand-new package cannot use trusted publishing for its first version. Follow
 `docs/RELEASING.md`: publish the exact prepared `0.0.0` tarballs once under the
 non-default `bootstrap` dist-tag, configure every package's trusted publisher,
-then make `0.1.0` the first advertised OIDC release.
+then make the next synchronized `0.1.x` version its first advertised OIDC
+release.
 
 The one-time `0.0.0` package-name bootstrap is published under the non-default
 `bootstrap` dist-tag, and trusted publishing is configured. The signed
 `v0.1.0` GitHub release published all seven `0.1.0` packages through OIDC with
 provenance on 2026-07-27.
+
+`@pegma/authorization-identity` is the eighth package. Its signed
+`authorization-identity-v0.0.0` source tag targets merged commit
+`afdf3f168d355629b2721512c246c1a18fd54c9d`; complete its package-only name
+reservation and trusted-publisher setup before creating the synchronized
+`v0.1.1` release that first advertises it.
 
 ## Where things stand
 

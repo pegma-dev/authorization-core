@@ -172,13 +172,20 @@ release, it needs the same one-time name reservation and trusted-publisher
 configuration. This does not reopen or alter the completed seven-package
 `v0.0.0` ceremony.
 
-The repository stays internally consistent: the root and all eight source
-packages remain at common version `0.1.0`, and the new package keeps its exact
-`@pegma/authorization-contracts@0.1.0` dependency. The dedicated package-only
-gate stages only the new package with publish version `0.0.0`; no intermediate
-version-mismatched source tree is needed:
+The audited bootstrap source stays internally consistent: root and all eight
+source packages use common version `0.1.0`, and the new package keeps its exact
+`@pegma/authorization-contracts@0.1.0` dependency. The signed annotated
+`authorization-identity-v0.0.0` tag targets merged `main` commit
+`afdf3f168d355629b2721512c246c1a18fd54c9d`. Always prepare the name-reservation
+artifact from that tag, never from the later synchronized release branch. The
+dedicated package-only gate stages only the new package with publish version
+`0.0.0`; no intermediate version-mismatched source tree is needed:
 
 ```sh
+git fetch origin tag authorization-identity-v0.0.0
+git verify-tag authorization-identity-v0.0.0
+test "$(git rev-parse 'authorization-identity-v0.0.0^{commit}')" = "afdf3f168d355629b2721512c246c1a18fd54c9d"
+git switch --detach authorization-identity-v0.0.0
 npm ci
 npm run format:check
 npm run check
@@ -197,9 +204,11 @@ a bootstrap-only schema and exactly one package. There is deliberately no
 bootstrap publish command, the tool refuses release/OIDC authority, and the
 stable OIDC publisher rejects its manifest.
 
-After that reviewed source commit is on `origin/main`, create and protect a
-signed annotated `authorization-identity-v0.0.0` tag as its source anchor.
-Publish only the prepared tarball manually:
+The protected signed annotated `authorization-identity-v0.0.0` source tag
+already exists. Fetch it and verify both its approved signature and exact
+`afdf3f168d355629b2721512c246c1a18fd54c9d` target as shown above. If any check
+fails, stop: do not recreate, move, or force the tag. Publish only the prepared
+tarball manually:
 
 ```sh
 npm publish .identity-bootstrap/pegma-authorization-identity-0.0.0.tgz --access public --tag bootstrap
@@ -214,13 +223,12 @@ configure the same `publish.yml` / `npm-publish` trusted publisher described
 above.
 
 Keep the unavoidable `latest=0.0.0` window as short as operationally possible.
-Immediately prepare the next reviewed synchronized `0.1.x` release (normally
-`0.1.1`, because the protected `v0.1.0` tag already exists) across all eight
-packages. Its OIDC publication moves the new package's `latest` tag to that
-advertised version while the seven existing versions verify and skip or advance
-according to the release version. Confirm `latest` is the new `0.1.x`,
-`bootstrap` remains `0.0.0`, and both registry integrities match. Do not create
-a GitHub release for the package-name reservation itself.
+The reviewed synchronized `0.1.1` preparation across all eight packages is the
+correction release because the protected `v0.1.0` tag already exists. Its OIDC
+publication moves the new package's `latest` tag to `0.1.1` while publishing
+the synchronized version of the seven existing packages. Confirm `latest` is
+`0.1.1`, `bootstrap` remains `0.0.0`, and both registry integrities match. Do
+not create a GitHub release for the package-name reservation itself.
 
 ## First advertised release and later releases
 
@@ -243,6 +251,14 @@ The `0.1.0` release pull request:
 External dependency versions are independent and must not be changed merely to
 match this repository's release.
 
+The `0.1.1` release pull request follows the same invariant with eight
+workspaces: root and all packages move from `0.1.0` to `0.1.1`, and every
+internal `@pegma/authorization-*` dependency moves to exact `0.1.1`. It is the
+first advertised release for `@pegma/authorization-identity`. The pull request
+may merge before the manual `0.0.0` name reservation, but do not create or push
+`v0.1.1` and do not create the GitHub release until the reservation integrity
+is exact and the Identity trusted publisher is configured.
+
 After that pull request is merged, identify the exact `origin/main` commit.
 With the same protected `v*` tag ruleset, create and push a signed annotated tag
 whose name exactly matches the manifests. Verify the pushed tag before creating
@@ -261,6 +277,10 @@ git fetch origin tag v0.1.0 --force
 git verify-tag v0.1.0
 gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
 ```
+
+For this prepared release, use `v0.1.1` consistently in those commands after
+the reviewed release pull request merges and the Identity bootstrap
+prerequisites above are complete. Never move the existing `v0.1.0` tag.
 
 The workflow's unprivileged preparation job checks out the fully qualified tag,
 requires an approved valid SSH-signed annotated tag, and proves that the tag
