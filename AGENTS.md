@@ -71,9 +71,10 @@ The one-time `0.0.0` package-name bootstrap is published under the non-default
 provenance on 2026-07-27.
 
 `@pegma/authorization-identity` is the eighth package. Its signed
-`authorization-identity-v0.0.0` source tag targets merged commit `afdf3f1`;
-complete its package-only name reservation and trusted-publisher setup before
-creating the synchronized `v0.1.1` release that first advertises it.
+`authorization-identity-v0.0.0` source tag targets merged commit
+`afdf3f168d355629b2721512c246c1a18fd54c9d`; complete its package-only name
+reservation and trusted-publisher setup before creating the synchronized
+`v0.1.1` release that first advertises it.
 
 ## Where things stand
 
