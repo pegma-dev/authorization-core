@@ -1,6 +1,6 @@
 # Security Scan — authorization-core
 
-**Date:** 2026-07-28
+**Date:** 2026-07-28 (initial scan); **re-scanned 2026-07-29** at `faff095` — no code changed since the initial scan (`git diff 0d8d537..HEAD` touches only this report), so all prior findings were re-verified in place and the layers the first pass covered only collectively (auth0/stripe/identity-link adapters, policy, core, contracts, conformance harness, `scripts/api-docs.mjs`) received line-level review. New material appears in the F-04 addendum and F-09.
 **Scope:** Full repository (all packages, workflows, tooling)
 **Method:** Manual code review, static analysis, dependency and workflow audit. Findings appended incrementally as they are discovered.
 
@@ -27,10 +27,11 @@ Logged for completeness so the review trail shows these were checked and hold:
 - Algorithm is pinned to ES256 in three places: header shape check (`verifier.ts:131-137`), `compactVerify` `algorithms` option (`verifier.ts:256-258`), and JWK `alg` member (`jwks.ts:66-88`). No `alg: none` or algorithm-confusion path exists; JWKS keys are validated as public P-256 verify-only CryptoKeys (`jwks.ts:55-64, 114`).
 - Canonical base64url is enforced by decode-then-re-encode round-trip (`internal.ts:145-162`), so malleable encodings are rejected.
 - Duplicate JSON member names are rejected by the strict parser (`internal.ts:259-261`) because `JSON.parse` would silently keep the last one; header/claims/JWK field sets must match exactly (`internal.ts:69-85`).
-- Replay protection burns the `jti` with `insertIfAbsent` *before* the grant is returned, re-checks time window and JWKS freshness after the store round-trip (`verifier.ts:279-291`), and treats store errors as denial (`replay.ts:121-128`). Signature verification precedes replay-store writes, so unauthenticated callers cannot pollute the replay store.
-- Issuer reserves the `jti` durably *before* signing (`issuer.ts:363-367`), uses CSPRNG 256-bit identifiers (`issuer.ts:179-181, 355-362`), and requires a private P-256 sign-only key (`issuer.ts:166-177`).
+- Replay protection burns the `jti` with `insertIfAbsent` _before_ the grant is returned, re-checks time window and JWKS freshness after the store round-trip (`verifier.ts:279-291`), and treats store errors as denial (`replay.ts:121-128`). Signature verification precedes replay-store writes, so unauthenticated callers cannot pollute the replay store.
+- Issuer reserves the `jti` durably _before_ signing (`issuer.ts:363-367`), uses CSPRNG 256-bit identifiers (`issuer.ts:179-181, 355-362`), and requires a private P-256 sign-only key (`issuer.ts:166-177`).
 - Grant lifetime is capped at 30 s with a 5 s negative verifier offset (`internal.ts:6-7`); source-authorization snapshots are monotonic-clock-bound and single-domain via WeakMap capabilities (`issuer.ts:88-95, 292-307`).
 - All verifier runtime failures collapse into one `AccessGrantError` so callers cannot probe keys, policies, permissions, or replay state (`verifier.ts:305-309`).
+
 ### F-04 — Assignment-pointer write result is discarded: cross-partition assignment-ID reuse is silently accepted
 
 - **Severity:** Medium (conditional on host-supplied IDs)
@@ -38,15 +39,17 @@ Logged for completeness so the review trail shows these were checked and hold:
 - **Exploitability:** Assignment IDs are host-supplied. If a host ever derives or accepts an assignment ID that can collide (e.g. client-influenced identifiers, id reuse across environments), the following occurs:
   1. Grant assignment `X` for principal P1 → pointer `(app, X) → P1-partition` written, grant commits.
   2. Grant assignment `X` for principal P2 (different partition) → pointer insert is a no-op (already exists, never compared), the tuple guard in P2's partition is free, no assignment record exists there, so **the second grant commits**.
-  Result: two active assignments share one ID. `revokeRoleAssignmentWithAudit(X)` and `getRoleAssignment(X)` resolve only through the first pointer (`role-store.ts:243-251, 494-503`), so the second assignment **cannot be revoked or read by ID** while remaining fully active in `listActiveRoleAssignments(P2, …)` — an unrevocable privilege grant, the exact ABA/revocation class of fault this repository's design is built to prevent.
+     Result: two active assignments share one ID. `revokeRoleAssignmentWithAudit(X)` and `getRoleAssignment(X)` resolve only through the first pointer (`role-store.ts:243-251, 494-503`), so the second assignment **cannot be revoked or read by ID** while remaining fully active in `listActiveRoleAssignments(P2, …)` — an unrevocable privilege grant, the exact ABA/revocation class of fault this repository's design is built to prevent.
 - **Confirmation:** **Reproduced** with a runtime proof-of-concept against the built package (script run from `C:\TEMP\opencode\f04-poc.mjs`, no repository files modified): the second cross-partition grant returned `granted`, both principals listed the same active assignment ID, and a successful `revoked` result for the ID left the second principal's assignment active.
 - **Recommendation:** When `insertIfAbsent` reports `inserted: false`, compare the existing pointer's location and role against the attempted grant; if they differ, return `conflict("assignment_id")` before touching the tuple guard.
+
+**Addendum (2026-07-29 re-scan) — the trigger is wider than reported.** The pointer write (`role-store.ts:380-384`) runs _before_ the tuple-guard conflict check (`role-store.ts:386-396`), so a grant that is **rejected** with `conflict("active_tuple")` (or that fails its transaction) still permanently commits the pointer. The first use of an ID therefore does not need to succeed to poison it. Reproduced with a runtime PoC against the built package (`C:\TEMP\opencode\f04-extension-poc.mjs`, no repository files modified): grant `a-1` for P1/`admin` commits; grant `a-2` for P1/`admin` correctly returns `conflict("active_tuple")`; a later grant reusing `a-2` for P2/`viewer` (a different partition) **commits**, appears in `listActiveRoleAssignments(P2, …)`, yet `getRoleAssignment("a-2")` returns `null` and `revokeRoleAssignmentWithAudit("a-2")` returns `not_found` — the dangling pointer from the rejected grant wins. The fix above (compare on `inserted: false`) also covers this path, since the rejected grant's pointer is exactly the mismatched record a later grant would find; hosts should additionally treat assignment IDs as single-use even across failed attempts.
 
 ### F-05 — Grant idempotent replay does not compare assignment payload
 
 - **Severity:** Informational
 - **Evidence:** `packages/storage/src/role-store.ts:411-419`. An exact `(assignmentId, auditEventId)` replay returns `unchanged` without comparing the stored assignment's role, scope, principal, or actor against the incoming command.
-- **Exploitability:** None directly — no state changes. But a host that retries a grant with the same event ID and *different* content receives a success-shaped `unchanged` result for content that was never written, which can mask operator or integration errors. Idempotency keyed on event ID alone is a defensible design; it should be documented explicitly at the port.
+- **Exploitability:** None directly — no state changes. But a host that retries a grant with the same event ID and _different_ content receives a success-shaped `unchanged` result for content that was never written, which can mask operator or integration errors. Idempotency keyed on event ID alone is a defensible design; it should be documented explicitly at the port.
 - **Recommendation:** Document that `unchanged` attests only to the event ID, or compare the full stored assignment and return `conflict("event_id")` on mismatch.
 
 ### F-06 — Lifecycle commands accept unvalidated field content (empty/unbounded IDs, roles, principals)
@@ -70,6 +73,14 @@ Logged for completeness so the review trail shows these were checked and hold:
 - **Exploitability:** None in this repository. The hazard is a host accidentally wiring the testing factory into production with a permissive fetcher or weak entropy. The module docstring states "Trusted test-only construction hooks," and the internal factories do validate injected values (key shape, random length, clock sanity) before use, so even misuse fails loudly rather than silently.
 - **Recommendation:** No change required; consider a runtime warning when the testing factory is used outside a test runner if the project wants belt-and-suspenders.
 
+### F-09 — Auth0 adapter accepts unbounded, unsanitized issuer/subject claims (2026-07-29 re-scan)
+
+- **Severity:** Low (host-trusted input boundary, consistency gap)
+- **Evidence:** `packages/auth0/src/index.ts:12-29` — `readOwnStringClaim` requires only a nonblank own string; there is no length cap and no control-character or lone-surrogate rejection. The sibling first-party adapter enforces all three: `packages/identity-link/src/index.ts:24-26` (`CONTROL` pattern, `MAX_ISSUER_LENGTH = 1_024`, `MAX_SUBJECT_LENGTH = 512`) and `54-65` (`boundedIdentifier`). The resulting key flows verbatim into the identity-link storage key (`packages/storage/src/collections.ts:410-418`).
+- **Exploitability:** Requires the "already-verified claims" trust boundary to supply pathological values — a malicious or buggy identity provider, or a host verification gap; an end user does not control Auth0's `iss`/`sub` in a correct integration. Even then the impact is bounded: key encoding (`collections.ts:25-39`) percent-escapes control characters injectively, so no cross-record collision or key injection is possible; what remains is unbounded key/value size persisted as-is and divergence from the bounded-identifier discipline the rest of the codebase applies (compare the tokens package, `packages/tokens/src/internal.ts:99-107`).
+- **Confidence:** Confirmed (code fact; exploit path requires an already-compromised trust boundary).
+- **Fix:** Mirror `identity-link`'s `boundedIdentifier` checks (length caps, control-character and lone-surrogate rejection) in `readOwnStringClaim` so both identity adapters enforce the same contract.
+
 ## Supply-chain, workflow, and secrets audit (all clear)
 
 - **Dependencies:** Runtime deps are exact-pinned and minimal — `jose@6.2.3` (tokens) and `@pegma/storage-core@0.3.0` (sibling). `npm audit` (with and without dev) reports **0 vulnerabilities**. Dependabot covers npm and github-actions.
@@ -80,18 +91,20 @@ Logged for completeness so the review trail shows these were checked and hold:
 
 ## Summary
 
-| ID | Severity | Title |
-|----|----------|-------|
-| F-04 | **Medium** | Cross-partition assignment-ID reuse silently commits a second, unrevocable-by-ID grant (**PoC-confirmed**) |
-| F-01 | Low | JWKS fetcher lacks timeout and response-size limit |
-| F-02 | Low | No size limit on compact grant input to the verifier |
-| F-06 | Low | Lifecycle commands accept unvalidated field content |
-| F-07 | Low | Reference example reads unbounded request bodies |
-| F-05 | Informational | Grant idempotent replay does not compare assignment payload |
-| F-08 | Informational | Published `testing` subpath is a documented misuse hazard |
-| F-03 | Positive | Tokens package invariants verified holding (alg pinning, canonical encodings, replay-before-return, fail-closed error unification, unknown-kid cooldown) |
+| ID   | Severity      | Title                                                                                                                                                                                      |
+| ---- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F-04 | **Medium**    | Cross-partition assignment-ID reuse silently commits a second, unrevocable-by-ID grant (**PoC-confirmed**; 2026-07-29 addendum: even a _rejected_ grant burns the ID — also PoC-confirmed) |
+| F-01 | Low           | JWKS fetcher lacks timeout and response-size limit                                                                                                                                         |
+| F-02 | Low           | No size limit on compact grant input to the verifier                                                                                                                                       |
+| F-06 | Low           | Lifecycle commands accept unvalidated field content                                                                                                                                        |
+| F-07 | Low           | Reference example reads unbounded request bodies                                                                                                                                           |
+| F-09 | Low           | Auth0 adapter lacks the bounded-identifier checks identity-link enforces                                                                                                                   |
+| F-05 | Informational | Grant idempotent replay does not compare assignment payload                                                                                                                                |
+| F-08 | Informational | Published `testing` subpath is a documented misuse hazard                                                                                                                                  |
+| F-03 | Positive      | Tokens package invariants verified holding (alg pinning, canonical encodings, replay-before-return, fail-closed error unification, unknown-kid cooldown)                                   |
 
-**One actionable Medium (F-04, runtime-confirmed)** and four Low hardening items. No critical or high findings. The codebase is unusually disciplined: exact-field JSON parsing with duplicate rejection, algorithm pinning, capability-based issuer state, fail-closed error paths, injective storage-key encoding, and single-partition lifecycle transactions are all implemented as documented.
+**One actionable Medium (F-04, runtime-confirmed, trigger widened on re-scan)** and five Low hardening items. No critical or high findings. The codebase is unusually disciplined: exact-field JSON parsing with duplicate rejection, algorithm pinning, capability-based issuer state, fail-closed error paths, injective storage-key encoding, and single-partition lifecycle transactions are all implemented as documented.
+
+**2026-07-29 re-scan layer status:** contracts/core/policy/conformance — clean (own-property discipline, `Object.hasOwn` lookups, null-prototype result maps, fail-closed validation wrappers). stripe adapter — clean (proxy rejection, exact-field/dense-array validation, stale/future-dated state rejected, exact-ID allowlist only). identity-link — clean (bounded identifiers, exact own-data shape). auth0 — one Low gap (F-09). storage — F-04 re-verified and widened; F-05/F-06 unchanged. tokens — F-01/F-02 re-verified in place; F-03 invariants re-confirmed. Workflows/scripts/secrets — unchanged and re-swept (`npm audit`: 0 vulnerabilities; no secret-pattern hits; `scripts/api-docs.mjs` guards path escape via `outputTarget`/package-root prefix checks and symlink-type checks via `lstat`).
 
 **Recommended next step for F-04:** in `grantRoleAssignmentWithAudit`, inspect the `insertIfAbsent` result — when not inserted, compare the existing pointer's `applicationId`/`principalId`/`scope`/`role` against the incoming grant and return `conflict("assignment_id")` on any mismatch.
-
