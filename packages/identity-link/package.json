@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-identity",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Verified first-party identity claims to Authorization Core identity-link keys.",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "directory": "packages/identity-link"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.2.0"
+    "@pegma/authorization-contracts": "0.3.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
