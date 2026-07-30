@@ -787,6 +787,17 @@ candidate), and a first-class concurrency-safe guard primitive, declined for
 now because records for different principals live in different partitions and
 the single-partition transaction boundary cannot honestly promise it.
 
+**Administration-surface extraction (2026-07-30, design under review):** with
+both reference hosts having independently built the same audited
+role-management surface, the extract-on-second-consumer trigger is met.
+[Role administration](ADMINISTRATION.md) is the design for
+`@pegma/authorization-admin`, the proposed tenth package: an HTTP-neutral
+grants-view / audited assign / guarded revoke / history service over the
+existing contracts, with the by-role holder index as its one host-provided
+port (subsumed if the library-maintained index above ships) and the guard's
+serialize-reverify-compensate concurrency treatment as contract. No
+implementation lands before that document is accepted.
+
 ## RetireGolden integration sequence
 
 RetireGolden should adopt Authorization Core incrementally:
