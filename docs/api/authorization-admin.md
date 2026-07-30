@@ -83,17 +83,23 @@ export declare function createRoleAdministration(
 
 **Kind:** function
 
-Seed one role for one principal, ONCE PER PRINCIPAL, EVER: any existing
-assignment record for the role — active or revoked, whatever its
-provenance — is durable already-seeded evidence, so a deliberate
+Seed one role for one principal, once per principal AND ROLE, ever: any
+existing assignment record for that role — active or revoked, whatever
+its provenance — is durable already-seeded evidence, so a deliberate
 revocation is never resurrected by a lingering seed input. The ceremony
 in `docs/ADMINISTRATOR_BOOTSTRAP.md` decides whether and for whom to
 call this; the helper is a pure function over the ports.
 
+`conflict` means the manifest is CONTRADICTORY — its assignment id is
+already claimed by a different lifecycle — and the principal may still
+hold nothing: the ceremony must fail closed, not report convergence.
+(A concurrent duplicate run converges through the store's `unchanged`
+replay, never through a conflict.)
+
 ```ts
 export declare function ensureSeededAssignment(
   options: EnsureSeededAssignmentOptions,
-): Promise<"granted" | "already">;
+): Promise<"granted" | "already" | "conflict">;
 ```
 
 ## EnsureSeededAssignmentOptions
@@ -218,6 +224,7 @@ export interface RoleAdministration {
   ) => Promise<RevokeRoleResult>;
   readonly anotherActiveHolderExists: (
     role: RoleName,
+    scope: RoleAssignmentScope,
     excludingPrincipalId: PrincipalId | "",
   ) => Promise<boolean>;
 }

@@ -1,4 +1,4 @@
-# Role administration (`@pegma/authorization-admin` — proposed)
+# Role administration (`@pegma/authorization-admin`)
 
 Status: **implemented** (`packages/admin`, tested against the memory
 store). Not yet published: the one-time `0.0.0` name reservation under the

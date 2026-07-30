@@ -184,18 +184,18 @@ describe("viewGrants", () => {
       },
       auditEventId: "evt-preindex-admin",
     });
-    expect(await administration.anotherActiveHolderExists(ADMIN, "")).toBe(
-      false,
-    );
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(false);
     const grants = await administration.viewGrants(bob, APPLICATION);
     expect(grants).toEqual([expect.objectContaining({ managedBy: "system" })]);
     // The view healed the index; the guard now sees the holder.
     expect(holderIndex.rows).toEqual([
       expect.objectContaining({ assignmentId: "preindex-admin" }),
     ]);
-    expect(await administration.anotherActiveHolderExists(ADMIN, "")).toBe(
-      true,
-    );
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(true);
   });
 });
 
@@ -261,6 +261,33 @@ describe("revokeRole", () => {
     ).toEqual({ status: "system_managed" });
   });
 
+  it("never counts a holder in a DIFFERENT scope toward the guard", async () => {
+    const { administration, store, holderIndex } = world();
+    await seededAdmin(store, holderIndex, bob, "seed-bob");
+    // Carol is an ORGANIZATION-scoped administrator — same role name,
+    // different scope. She is no answer to losing the last
+    // application-scoped administrator.
+    await ensureSeededAssignment({
+      store,
+      holderIndex,
+      principalId: carol,
+      role: ADMIN,
+      scope: { kind: "organization", organizationId: "org-1" },
+      assignmentId: "seed-carol-org",
+      auditEventId: "evt-seed-carol-org",
+      now: () => 1,
+    });
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, bob),
+    ).toBe(false);
+    expect(
+      await administration.revokeRole({
+        assignmentId: "seed-bob",
+        actor: operator,
+      }),
+    ).toEqual({ status: "last_administrator" });
+  });
+
   it("refuses to revoke the last active administrator, self or not", async () => {
     const { administration, store, holderIndex } = world();
     await seededAdmin(store, holderIndex, bob, "seed-bob");
@@ -303,9 +330,9 @@ describe("revokeRole", () => {
       "last_administrator",
       "revoked",
     ]);
-    expect(await administration.anotherActiveHolderExists(ADMIN, "")).toBe(
-      true,
-    );
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(true);
   });
 
   it("compensates when a cross-instance race removes the final administrator", async () => {
@@ -374,7 +401,91 @@ describe("revokeRole", () => {
         }),
       }),
     ]);
-    expect(await instanceA.anotherActiveHolderExists(ADMIN, "")).toBe(true);
+    expect(
+      await instanceA.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(true);
+  });
+});
+
+describe("compensation outcome", () => {
+  it("declines to compensate when another writer already restored an administrator", async () => {
+    const shared = createRoleStore(createMemoryStore(), "admin-tests");
+    const holderIndex = memoryHolderIndex();
+    const clock = deterministic();
+    // Between this instance's post-revoke re-verify and its compensation
+    // grant, another writer restores carol: the compensation conflicts on
+    // the active tuple, the re-check sees a real administrator, and the
+    // result honestly reports compensated: false.
+    let interleaved = false;
+    const interferingStore: RoleAdministrationStore = {
+      ...shared,
+      // Carol's competing revoke lands between this instance's pre-check
+      // and its own revoke, so the post-commit re-verify finds nobody.
+      revokeRoleAssignmentWithAudit: async (command) => {
+        if (!interleaved) {
+          interleaved = true;
+          const carolRecord = await shared.getRoleAssignment("seed-carol");
+          await shared.revokeRoleAssignmentWithAudit({
+            assignmentId: "seed-carol",
+            expectedConcurrencyToken: carolRecord!.concurrencyToken,
+            revokedBy: operator,
+            revokedAtEpochMs: 5,
+            auditEventId: "evt-revoke-carol-oob",
+          });
+        }
+        return shared.revokeRoleAssignmentWithAudit(command);
+      },
+      // The compensation attempt loses to yet another writer restoring
+      // carol: it conflicts on the active tuple after the restoration.
+      grantRoleAssignmentWithAudit: async (command) => {
+        if (
+          command.assignment.grantedBy.kind === "system" &&
+          command.assignment.grantedBy.systemId === GUARD_COMPENSATION_SYSTEM_ID
+        ) {
+          await holderIndex.record({
+            principalId: carol,
+            assignmentId: "carol-restored",
+            role: ADMIN,
+          });
+          const restored = await shared.grantRoleAssignmentWithAudit({
+            assignment: {
+              id: "carol-restored",
+              principalId: carol,
+              role: ADMIN,
+              scope: APPLICATION,
+              grantedBy: operator,
+              grantedAtEpochMs: 6,
+              status: "active",
+            },
+            auditEventId: "evt-carol-restored",
+          });
+          expect(restored.status).toBe("granted");
+          return {
+            status: "conflict",
+            reason: "active_tuple",
+          } as const;
+        }
+        return shared.grantRoleAssignmentWithAudit(command);
+      },
+    };
+    const administration = createRoleAdministration({
+      store: interferingStore,
+      holderIndex,
+      policy: { administratorRole: ADMIN },
+      now: clock.now,
+      generateId: clock.generateId,
+    });
+    await seededAdmin(shared, holderIndex, bob, "seed-bob");
+    await seededAdmin(shared, holderIndex, carol, "seed-carol");
+
+    const result = await administration.revokeRole({
+      assignmentId: "seed-bob",
+      actor: operator,
+    });
+    expect(result).toEqual({ status: "revoked", compensated: false });
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(true);
   });
 });
 
@@ -386,16 +497,16 @@ describe("anotherActiveHolderExists", () => {
       assignmentId: "dangling",
       role: ADMIN,
     });
-    expect(await administration.anotherActiveHolderExists(ADMIN, "")).toBe(
-      false,
-    );
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(false);
     await seededAdmin(store, holderIndex, carol, "seed-carol");
-    expect(await administration.anotherActiveHolderExists(ADMIN, "")).toBe(
-      true,
-    );
-    expect(await administration.anotherActiveHolderExists(ADMIN, carol)).toBe(
-      false,
-    );
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, ""),
+    ).toBe(true);
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, carol),
+    ).toBe(false);
   });
 });
 
@@ -436,6 +547,27 @@ describe("ensureSeededAssignment", () => {
       }),
     ).toBe("already");
     expect(await store.getRoleAssignment("seed-bob-second")).toBeNull();
+  });
+
+  it("fails closed on a contradictory manifest: a claimed assignment id is a conflict, not convergence", async () => {
+    const { store, holderIndex } = world();
+    // The manifest id is already claimed by a DIFFERENT lifecycle.
+    await seededAdmin(store, holderIndex, bob, "claimed-id");
+    expect(
+      await ensureSeededAssignment({
+        store,
+        holderIndex,
+        principalId: carol,
+        role: ADMIN,
+        scope: APPLICATION,
+        assignmentId: "claimed-id",
+        auditEventId: "evt-claimed-id-carol",
+        now: () => 2,
+      }),
+    ).toBe("conflict");
+    // The target principal was NOT seeded; the ceremony must not proceed
+    // as if it had been.
+    expect(await store.listRoleAssignments(carol, APPLICATION)).toEqual([]);
   });
 
   it("seeding one role does not block seeding a different role", async () => {

@@ -158,6 +158,7 @@ export interface RoleAdministration {
   ) => Promise<RevokeRoleResult>;
   readonly anotherActiveHolderExists: (
     role: RoleName,
+    scope: RoleAssignmentScope,
     excludingPrincipalId: PrincipalId | "",
   ) => Promise<boolean>;
 }
@@ -206,16 +207,22 @@ export interface EnsureSeededAssignmentOptions {
 }
 
 /**
- * Seed one role for one principal, ONCE PER PRINCIPAL, EVER: any existing
- * assignment record for the role — active or revoked, whatever its
- * provenance — is durable already-seeded evidence, so a deliberate
+ * Seed one role for one principal, once per principal AND ROLE, ever: any
+ * existing assignment record for that role — active or revoked, whatever
+ * its provenance — is durable already-seeded evidence, so a deliberate
  * revocation is never resurrected by a lingering seed input. The ceremony
  * in `docs/ADMINISTRATOR_BOOTSTRAP.md` decides whether and for whom to
  * call this; the helper is a pure function over the ports.
+ *
+ * `conflict` means the manifest is CONTRADICTORY — its assignment id is
+ * already claimed by a different lifecycle — and the principal may still
+ * hold nothing: the ceremony must fail closed, not report convergence.
+ * (A concurrent duplicate run converges through the store's `unchanged`
+ * replay, never through a conflict.)
  */
 export async function ensureSeededAssignment(
   options: EnsureSeededAssignmentOptions,
-): Promise<"granted" | "already"> {
+): Promise<"granted" | "already" | "conflict"> {
   const { store, holderIndex, principalId, role, scope } = options;
   const history = await store.listRoleAssignments(principalId, scope);
   if (history.some((assignment) => assignment.role === role)) {
@@ -243,7 +250,24 @@ export async function ensureSeededAssignment(
     },
     auditEventId: options.auditEventId,
   });
-  return result.status === "granted" ? "granted" : "already";
+  if (result.status === "granted") {
+    return "granted";
+  }
+  return result.status === "unchanged" ? "already" : "conflict";
+}
+
+/** Exact-scope equality: the guard never counts holders across scopes. */
+function sameScope(
+  left: RoleAssignmentScope,
+  right: RoleAssignmentScope,
+): boolean {
+  if (left.kind === "application") {
+    return right.kind === "application";
+  }
+  return (
+    right.kind === "organization" &&
+    right.organizationId === left.organizationId
+  );
 }
 
 /** Creates the administration service over host-owned ports. */
@@ -256,6 +280,7 @@ export function createRoleAdministration(
 
   const anotherActiveHolderExists = async (
     role: RoleName,
+    scope: RoleAssignmentScope,
     excludingPrincipalId: PrincipalId | "",
   ): Promise<boolean> => {
     const candidates = await holderIndex.listByRole(role);
@@ -263,13 +288,17 @@ export function createRoleAdministration(
       if (candidate.principalId === excludingPrincipalId) {
         continue;
       }
-      // Rows are candidates only; the authoritative store decides.
+      // Rows are candidates only; the authoritative store decides — and
+      // only an EXACT-scope holder counts: an organization-scoped
+      // administrator is no answer to losing the last application-scoped
+      // one.
       const current = await store.getRoleAssignment(candidate.assignmentId);
       if (
         current !== null &&
         current.assignment.status === "active" &&
         current.assignment.role === role &&
-        current.assignment.principalId === candidate.principalId
+        current.assignment.principalId === candidate.principalId &&
+        sameScope(current.assignment.scope, scope)
       ) {
         return true;
       }
@@ -305,6 +334,7 @@ export function createRoleAdministration(
         guarded &&
         !(await anotherActiveHolderExists(
           assignment.role,
+          assignment.scope,
           assignment.principalId,
         ))
       ) {
@@ -333,7 +363,9 @@ export function createRoleAdministration(
       // one-time system actor (human-managed, revocable). The residual
       // crash window and its documented recovery live in
       // docs/ADMINISTRATION.md.
-      if (await anotherActiveHolderExists(assignment.role, "")) {
+      if (
+        await anotherActiveHolderExists(assignment.role, assignment.scope, "")
+      ) {
         return { status: "revoked", compensated: false };
       }
       const compensationId = generateId();
@@ -342,7 +374,7 @@ export function createRoleAdministration(
         assignmentId: compensationId,
         role: assignment.role,
       });
-      await store.grantRoleAssignmentWithAudit({
+      const compensation = await store.grantRoleAssignmentWithAudit({
         assignment: {
           id: compensationId,
           principalId: assignment.principalId,
@@ -357,6 +389,21 @@ export function createRoleAdministration(
         },
         auditEventId: generateId(),
       });
+      if (compensation.status === "conflict") {
+        // `active_tuple` means another writer restored this principal in
+        // the meantime — verify that an administrator genuinely exists
+        // before declining to compensate. Anything else unverified is the
+        // documented crash-window failure: surface it, never report a
+        // guarantee that does not hold.
+        if (
+          await anotherActiveHolderExists(assignment.role, assignment.scope, "")
+        ) {
+          return { status: "revoked", compensated: false };
+        }
+        throw new Error(
+          "administrator compensation failed; recover via the bootstrap ceremony (docs/ADMINISTRATION.md)",
+        );
+      }
       return { status: "revoked", compensated: true };
     });
 
