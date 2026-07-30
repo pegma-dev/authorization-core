@@ -30,10 +30,36 @@ a host-owned `PrincipalId` or `null`.
 - Operational failures, incomplete reads, and corrupt records reject.
 - Issuers and subjects are not normalized or concatenated into an ambiguous
   delimiter-separated key.
-- The port does not create, unlink, transfer, or merge identity links.
+- The lookup surface does not create, unlink, transfer, or merge identity
+  links; durable creation is the separate write below.
 
 Provider identifiers remain lookup keys only. They never become principal IDs
 or enter `AccessSubject` or `AccessContext`.
+
+## Identity link writes
+
+`IdentityLinkStore.linkIdentity` is the public write path for durable identity
+links. It atomically claims one exact, case-sensitive issuer-and-subject tuple
+for one host principal:
+
+- `linked`: the tuple was free and now links to the written principal;
+- `unchanged`: the exact tuple already links to the same principal — a safe
+  replay; or
+- `conflict` with reason `principal`: the tuple already links to a different
+  principal. Each tuple links to at most one principal, while one principal may
+  hold many tuples.
+
+Successful results return the stored link, so a caller always reads back what
+is actually persisted. Concurrent writes for one free tuple settle on exactly
+one winner; the losers observe `conflict`.
+
+There is deliberately no unlink, relink, or transfer operation. Moving a tuple
+between principals is a host administrative decision with provider-specific
+evidence requirements, outside this port. A host whose subject-to-principal
+mapping already lives in its own account records may keep implementing the
+`IdentityAdapter` port over that store instead of persisting a second copy;
+`linkIdentity` exists so hosts without such a mapping can adopt the durable
+link store entirely through the public surface.
 
 ## Role assignment reads
 
@@ -53,6 +79,40 @@ validating membership. Organization A and organization B remain distinct.
 
 Revoked assignments are excluded from active queries but retained by exact ID
 with all original grant evidence.
+
+`listRoleAssignments` takes the same exact principal-and-scope pair and returns
+the complete lifecycle history: every assignment the principal has ever held in
+that scope, active and revoked alike, each with its grant and — where revoked —
+revocation evidence intact. Records are ordered by `grantedAtEpochMs` ascending
+and then by assignment ID code-unit order, so a
+grant-revoke-regrant sequence for one role reads in lifecycle order under new
+IDs. An empty array means definitive emptiness, and the same rejection rules
+apply. Like the active selection, it is a non-snapshot read of the
+authoritative records.
+
+### By-role selection across principals
+
+Neither listing crosses principals. Records are partitioned by principal and
+scope so both listings are one-partition reads, which means "every active
+holder of role R" has no partition to read and no supported query. A host that
+needs it — a role-administration panel, or a last-administrator guard refusing
+to revoke the final active `Admin` — must maintain a secondary index, and the
+index must fail in the safe direction:
+
+1. Write the index entry **before** the audited grant, so the index can only
+   over-report, never under-report. A grant refused after its index entry was
+   written leaves a harmless superset row.
+2. Never delete index entries on revocation; history is part of the point.
+3. Verify every index candidate against the authoritative store before acting
+   on it.
+
+Under those rules an over-full index can only make a guard refuse — fail
+closed. The check itself is still a non-snapshot read: a guard that verifies
+"another active holder exists" and then revokes can race a concurrent
+revocation of that other holder. A host enforcing an at-least-one invariant
+must re-verify after its own revocation commits and compensate — regrant under
+a fresh assignment ID — when the invariant was lost. Whether this index becomes
+a library-maintained structure is tracked as Phase 6 integration feedback.
 
 ## Atomic create
 
@@ -180,7 +240,9 @@ treats as definitive.
 `authorization_identity_links` maps one exact issuer-and-subject tuple to a
 principal. Issuer and subject are stored raw as well as encoded into the record
 ID, so a reader confirms the exact case-sensitive tuple rather than trusting
-that two distinct tuples did not encode alike.
+that two distinct tuples did not encode alike. `linkIdentity` claims a tuple
+with `insertIfAbsent`, which is what makes concurrent writes for one free tuple
+settle on exactly one winner.
 
 Every key segment escapes `%`, `|`, `/`, `\`, `#`, `?`, and control characters
 as `%XX`. Escaping rather than hashing keeps keys readable and, more
@@ -223,11 +285,12 @@ partition and would therefore leave the transaction boundary.
 
 ## Non-snapshot reads
 
-`listActiveRoleAssignments` is one partition read of the authoritative
-assignment records. There is no derived selection index and no fence to
-compare, so there is nothing that can drift from the records or that would need
-reconciling; but a partition listing is not a snapshot, and a read that begins
-before a revocation may still observe the assignment as active.
+`listActiveRoleAssignments` and `listRoleAssignments` are each one partition
+read of the authoritative assignment records. There is no derived selection
+index and no fence to compare, so there is nothing that can drift from the
+records or that would need reconciling; but a partition listing is not a
+snapshot, and a read that begins before a revocation may still observe the
+assignment as active.
 
 The host's cache generation fence is therefore load-bearing rather than
 belt-and-braces. A fill must capture all applicable generations before its
@@ -241,8 +304,9 @@ deadline, exact binding, invalidation, and stale-fill rules in that guide.
 
 `createInMemoryStorageAdapter` is `createRoleStore` over the storage-core
 in-process memory store, bound to one application namespace. It implements
-exact principal lookup, role reads, audit reads, and combined audited grants
-and revocations. Its returned object deliberately has no
+exact principal lookup, identity link writes, role reads, audit reads, and
+combined audited grants and revocations. Its returned object deliberately has
+no
 `createRoleAssignment`, raw `revokeRoleAssignment` signature, or
 `appendRoleAssignmentAuditEvent` capability outside the combined command
 contract.

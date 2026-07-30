@@ -273,6 +273,13 @@ class HostApplicationRoleStore implements ApplicationBoundRoleAssignmentReader {
     return this.#storage.listActiveRoleAssignments(principalId, scope);
   }
 
+  listRoleAssignments(
+    principalId: PrincipalId,
+    scope: RoleAssignmentScope,
+  ): ReturnType<RoleAssignmentReader["listRoleAssignments"]> {
+    return this.#storage.listRoleAssignments(principalId, scope);
+  }
+
   grantRoleAssignmentWithAudit(
     input: Parameters<
       InMemoryStorageAdapter["grantRoleAssignmentWithAudit"]
@@ -605,6 +612,13 @@ class CountingReader implements ApplicationBoundRoleAssignmentReader {
     }
     return this.inner.listActiveRoleAssignments(principalId, scope);
   }
+
+  listRoleAssignments(
+    principalId: PrincipalId,
+    scope: RoleAssignmentScope,
+  ): ReturnType<RoleAssignmentReader["listRoleAssignments"]> {
+    return this.inner.listRoleAssignments(principalId, scope);
+  }
 }
 
 class DeferredReader implements ApplicationBoundRoleAssignmentReader {
@@ -643,6 +657,13 @@ class DeferredReader implements ApplicationBoundRoleAssignmentReader {
     this.#signalStarted();
     await this.#released;
     return captured;
+  }
+
+  listRoleAssignments(
+    principalId: PrincipalId,
+    scope: RoleAssignmentScope,
+  ): ReturnType<RoleAssignmentReader["listRoleAssignments"]> {
+    return this.inner.listRoleAssignments(principalId, scope);
   }
 
   release(): void {
@@ -1775,7 +1796,7 @@ describe("fast role-revocation cache contract", () => {
       "principalId" | "policyVersion" | "roles" | "entitlements" | "permissions"
     >();
     expectTypeOf<keyof RoleAssignmentReader>().toEqualTypeOf<
-      "getRoleAssignment" | "listActiveRoleAssignments"
+      "getRoleAssignment" | "listActiveRoleAssignments" | "listRoleAssignments"
     >();
   });
 });

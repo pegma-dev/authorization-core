@@ -757,6 +757,24 @@ shapes. The subpath is wired into generated API documentation and release
 packaging, but the publication item remains open until a synchronized npm
 release makes it available to external adapters.
 
+**Reference-consumer storage and billing feedback (2026-07-30):** RetireGolden
+filed the first production-consumer issues (#23, #24, #25). In response,
+`@pegma/authorization-storage` gained `IdentityLinkStore.linkIdentity` — the
+previously missing public write path for durable identity links, with
+exact-tuple uniqueness and single-winner concurrency — and
+`RoleAssignmentReader.listRoleAssignments`, the complete per-principal
+lifecycle listing including revoked evidence in a stable documented order.
+`docs/STRIPE.md` now documents the translator-plus-host-lifecycle composition
+as the first-class path for webhook-maintained ledgers, with the obligations a
+host takes on in place of the adapter's wall-clock staleness bound.
+`docs/STORAGE.md` documents the superset-with-verification recipe for by-role
+selection and last-administrator guards. Two follow-ups remain deliberately
+open from #24: a library-maintained by-role index (a design task — the
+recipe's write-before-grant, never-delete, verify-on-read shape is the
+candidate), and a first-class concurrency-safe guard primitive, declined for
+now because records for different principals live in different partitions and
+the single-partition transaction boundary cannot honestly promise it.
+
 ## RetireGolden integration sequence
 
 RetireGolden should adopt Authorization Core incrementally:

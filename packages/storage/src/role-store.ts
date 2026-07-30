@@ -43,6 +43,7 @@ import type {
   GrantRoleAssignmentResult,
   InMemoryStorageAdapter,
   InMemoryStorageAdapterOptions,
+  LinkIdentityResult,
   SequencedRoleAssignmentAuditEvent,
   VersionedRoleAssignment,
 } from "./index.js";
@@ -72,6 +73,15 @@ const snapshotActor = (actor: RoleAssignmentActor): RoleAssignmentActor => {
   }
   throw new TypeError("role assignment actor must be explicit");
 };
+
+const snapshotIdentityLink = (link: IdentityLink): IdentityLink =>
+  Object.freeze({
+    key: Object.freeze({
+      issuer: link.key.issuer,
+      subject: link.key.subject,
+    }),
+    principalId: link.principalId,
+  });
 
 const requireLifecycleTimestamp = (value: number, field: string): number => {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -318,6 +328,30 @@ export const createRoleStore = (
       return stored.link.principalId;
     },
 
+    async linkIdentity(link: IdentityLink): Promise<LinkIdentityResult> {
+      const snapshot = snapshotIdentityLink(link);
+      const result = await links.insertIfAbsent({
+        applicationId,
+        link: snapshot,
+      });
+      const stored = result.value.link;
+      if (
+        stored.key.issuer !== snapshot.key.issuer ||
+        stored.key.subject !== snapshot.key.subject
+      ) {
+        // Key encoding is injective, so a stored tuple can differ from the
+        // written one only if the record itself is damaged.
+        throw corrupt("an identity link disagrees with its key tuple");
+      }
+      if (stored.principalId !== snapshot.principalId) {
+        return conflict("principal");
+      }
+      return Object.freeze({
+        status: result.inserted ? "linked" : "unchanged",
+        link: snapshotIdentityLink(stored),
+      });
+    },
+
     async getRoleAssignment(
       assignmentId: RoleAssignmentId,
     ): Promise<VersionedRoleAssignment | null> {
@@ -354,6 +388,36 @@ export const createRoleStore = (
           .map(({ assignment }) =>
             freezeAssignment(assignment as ActiveRoleAssignment),
           ),
+      );
+    },
+
+    async listRoleAssignments(
+      principalId: PrincipalId,
+      scope: RoleAssignmentScope,
+    ): Promise<readonly RoleAssignment[]> {
+      const partition = recordPartition({
+        applicationId,
+        principalId,
+        scope: snapshotScope(scope),
+      });
+      const found = await records.list(partition);
+      return Object.freeze(
+        found
+          .filter(
+            (record): record is StoredAssignment =>
+              record.kind === "assignment",
+          )
+          .map(({ assignment }) => assignment)
+          .sort((left, right) =>
+            left.grantedAtEpochMs !== right.grantedAtEpochMs
+              ? left.grantedAtEpochMs - right.grantedAtEpochMs
+              : left.id < right.id
+                ? -1
+                : left.id > right.id
+                  ? 1
+                  : 0,
+          )
+          .map((assignment) => freezeAssignment(assignment)),
       );
     },
 
@@ -716,6 +780,10 @@ export const createInMemoryStorageAdapter = (
     ): Promise<PrincipalId | null> {
       await seeded;
       return adapter.resolvePrincipalId(key);
+    },
+    async linkIdentity(link: IdentityLink): Promise<LinkIdentityResult> {
+      await seeded;
+      return adapter.linkIdentity(link);
     },
   });
 };

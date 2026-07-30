@@ -18,6 +18,7 @@ import {
   createRoleStore,
   type AuditedRoleAssignmentMutationStore,
   type CreateRoleAssignmentResult,
+  type IdentityLinkStore,
   type InMemoryStorageAdapter,
   type PrincipalLookupStore,
   type RevokeRoleAssignmentResult,
@@ -82,7 +83,9 @@ describe("storage port surface", () => {
   it("keeps the read, audit, and safe-mutation contracts on one adapter", () => {
     const adapter = createInMemoryStorageAdapter();
     expectTypeOf<PrincipalLookupStore>().toMatchTypeOf<IdentityAdapter>();
+    expectTypeOf<IdentityLinkStore>().toMatchTypeOf<PrincipalLookupStore>();
     expectTypeOf(adapter).toMatchTypeOf<PrincipalLookupStore>();
+    expectTypeOf(adapter).toMatchTypeOf<IdentityLinkStore>();
     expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentReader>();
     expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentAuditReader>();
     expectTypeOf(adapter).toMatchTypeOf<AuditedRoleAssignmentMutationStore>();
@@ -236,6 +239,175 @@ describe("principal lookup", () => {
   });
 });
 
+describe("identity link writes", () => {
+  const key = { issuer: "https://issuer.example/", subject: "provider|one" };
+
+  it("links a durable tuple that then resolves through any bound store", async () => {
+    const store = createMemoryStore();
+    const writer = createRoleStore(store, "application_one");
+    const linked = await writer.linkIdentity({
+      key,
+      principalId: "principal_alpha",
+    });
+    expect(linked).toEqual({
+      status: "linked",
+      link: { key, principalId: "principal_alpha" },
+    });
+
+    // A second binding over the same backend sees the same durable record.
+    const reader = createRoleStore(store, "application_one");
+    await expect(reader.resolvePrincipalId(key)).resolves.toBe(
+      "principal_alpha",
+    );
+  });
+
+  it("replays an identical link as unchanged", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const link = { key, principalId: "principal_alpha" };
+    await expect(adapter.linkIdentity(link)).resolves.toMatchObject({
+      status: "linked",
+    });
+    const replay = await adapter.linkIdentity(structuredClone(link));
+    expect(replay).toEqual({
+      status: "unchanged",
+      link: { key, principalId: "principal_alpha" },
+    });
+  });
+
+  it("refuses relinking one exact tuple to a different principal", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await adapter.linkIdentity({ key, principalId: "principal_alpha" });
+    await expect(
+      adapter.linkIdentity({ key, principalId: "principal_beta" }),
+    ).resolves.toEqual({ status: "conflict", reason: "principal" });
+    await expect(adapter.resolvePrincipalId(key)).resolves.toBe(
+      "principal_alpha",
+    );
+  });
+
+  it("permits one principal to hold several exact tuples", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const second = {
+      issuer: "https://second-issuer.example/",
+      subject: "provider|two",
+    };
+    await expect(
+      adapter.linkIdentity({ key, principalId: "principal_alpha" }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(
+      adapter.linkIdentity({ key: second, principalId: "principal_alpha" }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(adapter.resolvePrincipalId(key)).resolves.toBe(
+      "principal_alpha",
+    );
+    await expect(adapter.resolvePrincipalId(second)).resolves.toBe(
+      "principal_alpha",
+    );
+  });
+
+  it("keeps written tuples exact, case-sensitive, and delimiter safe", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await adapter.linkIdentity({
+      key: { issuer: "a|b", subject: "c" },
+      principalId: "principal_one",
+    });
+    await expect(
+      adapter.linkIdentity({
+        key: { issuer: "a", subject: "b|c" },
+        principalId: "principal_two",
+      }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(
+      adapter.linkIdentity({
+        key: { issuer: "A|b", subject: "c" },
+        principalId: "principal_three",
+      }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a|b", subject: "c" }),
+    ).resolves.toBe("principal_one");
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "a", subject: "b|c" }),
+    ).resolves.toBe("principal_two");
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "A|b", subject: "c" }),
+    ).resolves.toBe("principal_three");
+  });
+
+  it("treats a seeded link as the established tuple owner", async () => {
+    const adapter = createInMemoryStorageAdapter({
+      identityLinks: [{ key, principalId: "principal_alpha" }],
+    });
+    await expect(
+      adapter.linkIdentity({ key, principalId: "principal_beta" }),
+    ).resolves.toEqual({ status: "conflict", reason: "principal" });
+    await expect(
+      adapter.linkIdentity({ key, principalId: "principal_alpha" }),
+    ).resolves.toMatchObject({ status: "unchanged" });
+  });
+
+  it("isolates identity links by host application namespace", async () => {
+    const store = createMemoryStore();
+    const first = createRoleStore(store, "application_one");
+    const second = createRoleStore(store, "application_two");
+    await expect(
+      first.linkIdentity({ key, principalId: "principal_alpha" }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(
+      second.linkIdentity({ key, principalId: "principal_beta" }),
+    ).resolves.toMatchObject({ status: "linked" });
+    await expect(first.resolvePrincipalId(key)).resolves.toBe(
+      "principal_alpha",
+    );
+    await expect(second.resolvePrincipalId(key)).resolves.toBe(
+      "principal_beta",
+    );
+  });
+
+  it("returns frozen, detached links regardless of caller mutation", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const mutableKey = { issuer: "issuer", subject: "subject" };
+    const link = { key: mutableKey, principalId: "principal_alpha" };
+    const result = await adapter.linkIdentity(link);
+    if (result.status !== "linked") {
+      throw new Error(`expected linked, received ${result.status}`);
+    }
+    mutableKey.issuer = "changed";
+    link.principalId = "changed";
+    expect(result.link).toEqual({
+      key: { issuer: "issuer", subject: "subject" },
+      principalId: "principal_alpha",
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.link)).toBe(true);
+    expect(Object.isFrozen(result.link.key)).toBe(true);
+    await expect(
+      adapter.resolvePrincipalId({ issuer: "issuer", subject: "subject" }),
+    ).resolves.toBe("principal_alpha");
+  });
+
+  it("settles concurrent writes for one tuple on exactly one principal", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const results = await Promise.all(
+      ["principal_alpha", "principal_beta", "principal_gamma"].map(
+        (principalId) => adapter.linkIdentity({ key, principalId }),
+      ),
+    );
+    const winners = results.filter(({ status }) => status === "linked");
+    expect(winners).toHaveLength(1);
+    const winner = winners[0];
+    if (winner?.status !== "linked") {
+      throw new Error("expected one linked result");
+    }
+    expect(results.filter(({ status }) => status === "conflict")).toHaveLength(
+      2,
+    );
+    await expect(adapter.resolvePrincipalId(key)).resolves.toBe(
+      winner.link.principalId,
+    );
+  });
+});
+
 describe("role assignment reads", () => {
   it("reads exact IDs and isolates active selection by principal and scope", async () => {
     const adapter = createInMemoryStorageAdapter();
@@ -295,6 +467,126 @@ describe("role assignment reads", () => {
       "billing",
       "support",
     ]);
+  });
+
+  it("lists the complete lifecycle history including revoked evidence", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const first = await requireGrant(
+      adapter,
+      activeAssignment("first-admin", {
+        role: "admin",
+        grantedAtEpochMs: 1_700_000_000_000,
+      }),
+    );
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "first-admin",
+      expectedConcurrencyToken: first.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_500,
+      reason: "rotation",
+      auditEventId: "revoke:first-admin",
+    });
+    await requireGrant(
+      adapter,
+      activeAssignment("second-admin", {
+        role: "admin",
+        grantedAtEpochMs: 1_700_000_001_000,
+      }),
+    );
+
+    const lifecycle = await adapter.listRoleAssignments(
+      "principal_alpha",
+      applicationScope,
+    );
+    expect(lifecycle).toMatchObject([
+      {
+        id: "first-admin",
+        status: "revoked",
+        role: "admin",
+        grantedBy: grantor,
+        grantedAtEpochMs: 1_700_000_000_000,
+        revokedBy: revoker,
+        revokedAtEpochMs: 1_700_000_000_500,
+        reason: "rotation",
+      },
+      {
+        id: "second-admin",
+        status: "active",
+        role: "admin",
+        grantedAtEpochMs: 1_700_000_001_000,
+      },
+    ]);
+    expect(Object.isFrozen(lifecycle)).toBe(true);
+    expect(Object.isFrozen(lifecycle[0])).toBe(true);
+
+    // The active-only selection still excludes the revoked record.
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "second-admin" }]);
+  });
+
+  it("orders lifecycle records by grant time and then assignment ID", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(
+      adapter,
+      activeAssignment("z-early", {
+        role: "support",
+        grantedAtEpochMs: 1_700_000_000_000,
+      }),
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("a-late", {
+        role: "billing",
+        grantedAtEpochMs: 1_700_000_002_000,
+      }),
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("b-tied", {
+        role: "admin",
+        grantedAtEpochMs: 1_700_000_000_000,
+      }),
+    );
+
+    const lifecycle = await adapter.listRoleAssignments(
+      "principal_alpha",
+      applicationScope,
+    );
+    expect(lifecycle.map(({ id }) => id)).toEqual([
+      "b-tied",
+      "z-early",
+      "a-late",
+    ]);
+  });
+
+  it("isolates lifecycle listing by principal and exact scope", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = await requireGrant(adapter, activeAssignment("scoped"));
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "scoped",
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "revoke:scoped",
+    });
+    await requireGrant(
+      adapter,
+      activeAssignment("organization", { scope: organizationScope }),
+    );
+
+    await expect(
+      adapter.listRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "scoped", status: "revoked" }]);
+    await expect(
+      adapter.listRoleAssignments("principal_alpha", organizationScope),
+    ).resolves.toMatchObject([{ id: "organization", status: "active" }]);
+    await expect(
+      adapter.listRoleAssignments("principal_beta", applicationScope),
+    ).resolves.toEqual([]);
+    await expect(
+      adapter.listRoleAssignments("principal_alpha", otherOrganizationScope),
+    ).resolves.toEqual([]);
   });
 
   it("returns fresh, frozen, detached role and audit snapshots", async () => {
