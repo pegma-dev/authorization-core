@@ -12,6 +12,13 @@ export interface IdentityBootstrapPackageDefinition {
   readonly version: "0.0.0";
 }
 
+export interface EntraBootstrapPackageDefinition {
+  readonly directory: "entra";
+  readonly name: "@pegma/authorization-entra";
+  readonly sourceVersion: "0.1.3";
+  readonly version: "0.0.0";
+}
+
 export interface ValidationOptions {
   readonly root?: string;
   readonly releaseTag?: string;
@@ -29,6 +36,7 @@ export interface ReleaseCommandOptions extends ValidationOptions {
 
 export const RELEASE_PACKAGES: readonly ReleasePackageDefinition[];
 export const IDENTITY_BOOTSTRAP_PACKAGE: IdentityBootstrapPackageDefinition;
+export const ENTRA_BOOTSTRAP_PACKAGE: EntraBootstrapPackageDefinition;
 
 export function releaseImportSpecifiers(
   definitions?: readonly ReleasePackageDefinition[],
@@ -50,7 +58,19 @@ export function validateIdentityBootstrapRepository(
   version: "0.0.0";
 }>;
 
+export function validateEntraBootstrapRepository(
+  options?: ValidationOptions,
+): Promise<{
+  root: string;
+  sourceVersion: "0.1.3";
+  version: "0.0.0";
+}>;
+
 export function prepareIdentityBootstrap(
+  options?: ReleaseCommandOptions,
+): Promise<{ manifestPath: string; manifest: unknown }>;
+
+export function prepareEntraBootstrap(
   options?: ReleaseCommandOptions,
 ): Promise<{ manifestPath: string; manifest: unknown }>;
 
@@ -62,10 +82,21 @@ export function verifyIdentityBootstrapManifest(
   manifestPath: string,
 ): Promise<unknown>;
 
+export function verifyEntraBootstrapManifest(
+  manifestPath: string,
+): Promise<unknown>;
+
 export function inspectIdentityBootstrapRegistry(
   options?: ReleaseCommandOptions,
 ): Promise<{
   name: "@pegma/authorization-identity";
+  state: "exact" | "absent";
+}>;
+
+export function inspectEntraBootstrapRegistry(
+  options?: ReleaseCommandOptions,
+): Promise<{
+  name: "@pegma/authorization-entra";
   state: "exact" | "absent";
 }>;
 

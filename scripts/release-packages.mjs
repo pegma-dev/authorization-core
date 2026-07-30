@@ -39,6 +39,12 @@ export const RELEASE_PACKAGES = [
     modules: ["index"],
   },
   {
+    directory: "entra",
+    name: "@pegma/authorization-entra",
+    exports: ["."],
+    modules: ["index"],
+  },
+  {
     directory: "identity-link",
     name: "@pegma/authorization-identity",
     exports: ["."],
@@ -95,18 +101,105 @@ export function releaseImportSpecifiers(definitions = RELEASE_PACKAGES) {
   );
 }
 
-export const IDENTITY_BOOTSTRAP_PACKAGE = Object.freeze({
+function packageBootstrapDefinition(config) {
+  return Object.freeze({
+    ...config,
+    definition: RELEASE_PACKAGES.find(({ name }) => name === config.name),
+    expectedTarball: `${config.name.slice(1).replace("/", "-")}-${config.version}.tgz`,
+  });
+}
+
+const IDENTITY_BOOTSTRAP = packageBootstrapDefinition({
   directory: "identity-link",
   name: "@pegma/authorization-identity",
   sourceVersion: "0.1.0",
   version: "0.0.0",
+  kind: "authorization-identity-package-bootstrap",
+  schemaVersion: 1,
+  label: "identity",
+  defaultOutput: ".identity-bootstrap",
+  manifestFile: "identity-bootstrap-manifest.json",
+  verifyPortableProjection(module) {
+    const key = module.identityLinkKeyFromVerifiedIdentityClaims({
+      issuer: "https://identity.example.test",
+      subject: "portable-bootstrap-subject",
+      emailVerified: true,
+    });
+    if (
+      !Object.isFrozen(key) ||
+      !sameJson(key, {
+        issuer: "https://identity.example.test",
+        subject: "portable-bootstrap-subject",
+      })
+    ) {
+      fail("identity bootstrap portable ESM projection failed");
+    }
+  },
+  consumerSmokeModule() {
+    return [
+      'const module = await import("@pegma/authorization-identity");',
+      "const result = module.identityLinkKeyFromVerifiedIdentityClaims({",
+      '  issuer: "https://identity.example.test",',
+      '  subject: "installed-bootstrap-subject",',
+      "  emailVerified: true,",
+      "});",
+      "if (!Object.isFrozen(result) || Object.keys(result).join() !== 'issuer,subject') process.exit(1);",
+    ].join("\n");
+  },
 });
 
-const IDENTITY_BOOTSTRAP_KIND = "authorization-identity-package-bootstrap";
-const IDENTITY_BOOTSTRAP_SCHEMA_VERSION = 1;
-const IDENTITY_BOOTSTRAP_DEFINITION = RELEASE_PACKAGES.find(
-  ({ name }) => name === IDENTITY_BOOTSTRAP_PACKAGE.name,
-);
+const ENTRA_BOOTSTRAP = packageBootstrapDefinition({
+  directory: "entra",
+  name: "@pegma/authorization-entra",
+  sourceVersion: "0.1.3",
+  version: "0.0.0",
+  kind: "authorization-entra-package-bootstrap",
+  schemaVersion: 1,
+  label: "entra",
+  defaultOutput: ".entra-bootstrap",
+  manifestFile: "entra-bootstrap-manifest.json",
+  verifyPortableProjection(module) {
+    const key = module.identityLinkKeyFromVerifiedEntraClaims({
+      iss: "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+      oid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    });
+    if (
+      !Object.isFrozen(key) ||
+      !sameJson(key, {
+        issuer:
+          "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+        subject: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      })
+    ) {
+      fail("entra bootstrap portable ESM projection failed");
+    }
+  },
+  consumerSmokeModule() {
+    return [
+      'const module = await import("@pegma/authorization-entra");',
+      "const result = module.identityLinkKeyFromVerifiedEntraClaims({",
+      '  iss: "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",',
+      '  oid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",',
+      "});",
+      "if (!Object.isFrozen(result) || Object.keys(result).join() !== 'issuer,subject') process.exit(1);",
+    ].join("\n");
+  },
+});
+
+export const IDENTITY_BOOTSTRAP_PACKAGE = Object.freeze({
+  directory: IDENTITY_BOOTSTRAP.directory,
+  name: IDENTITY_BOOTSTRAP.name,
+  sourceVersion: IDENTITY_BOOTSTRAP.sourceVersion,
+  version: IDENTITY_BOOTSTRAP.version,
+});
+
+export const ENTRA_BOOTSTRAP_PACKAGE = Object.freeze({
+  directory: ENTRA_BOOTSTRAP.directory,
+  name: ENTRA_BOOTSTRAP.name,
+  sourceVersion: ENTRA_BOOTSTRAP.sourceVersion,
+  version: ENTRA_BOOTSTRAP.version,
+});
+
 const INTERNAL_NAMES = new Set(RELEASE_PACKAGES.map(({ name }) => name));
 const DEPENDENCY_SECTIONS = [
   "dependencies",
@@ -418,7 +511,7 @@ export async function validateRepository(options = {}) {
   return { root, version, releaseTag };
 }
 
-function requireManualIdentityBootstrap(options = {}) {
+function requireManualPackageBootstrap(bootstrap, options = {}) {
   if (
     options.releaseTag !== undefined ||
     options.requireReleaseTag === true ||
@@ -428,18 +521,18 @@ function requireManualIdentityBootstrap(options = {}) {
     process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined
   ) {
     fail(
-      "the identity bootstrap is manual package-name reservation only and refuses release or OIDC authority",
+      `the ${bootstrap.label} bootstrap is manual package-name reservation only and refuses release or OIDC authority`,
     );
   }
 }
 
-function validateIdentityBootstrapDependencies(manifest, location) {
+function validatePackageBootstrapDependencies(bootstrap, manifest, location) {
   const expected = {
-    "@pegma/authorization-contracts": IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion,
+    "@pegma/authorization-contracts": bootstrap.sourceVersion,
   };
   if (!sameJson(manifest.dependencies, expected)) {
     fail(
-      `${location} must depend only on exact @pegma/authorization-contracts@${IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion}`,
+      `${location} must depend only on exact @pegma/authorization-contracts@${bootstrap.sourceVersion}`,
     );
   }
   for (const section of [
@@ -456,25 +549,35 @@ function validateIdentityBootstrapDependencies(manifest, location) {
   }
 }
 
-export async function validateIdentityBootstrapRepository(options = {}) {
-  requireManualIdentityBootstrap(options);
+async function validatePackageBootstrapRepository(bootstrap, options = {}) {
+  requireManualPackageBootstrap(bootstrap, options);
   const validated = await validateRepository(options);
-  if (validated.version !== IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion) {
+  if (validated.version !== bootstrap.sourceVersion) {
     fail(
-      `identity bootstrap source requires root ${IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion}, found ${validated.version}`,
+      `${bootstrap.label} bootstrap source requires root ${bootstrap.sourceVersion}, found ${validated.version}`,
     );
   }
-  if (IDENTITY_BOOTSTRAP_DEFINITION === undefined) {
-    fail("identity bootstrap package is missing from the release inventory");
+  if (bootstrap.definition === undefined) {
+    fail(
+      `${bootstrap.label} bootstrap package is missing from the release inventory`,
+    );
   }
-  const location = `packages/${IDENTITY_BOOTSTRAP_PACKAGE.directory}/package.json`;
+  const location = `packages/${bootstrap.directory}/package.json`;
   const manifest = await readJson(join(validated.root, location));
-  validateIdentityBootstrapDependencies(manifest, location);
+  validatePackageBootstrapDependencies(bootstrap, manifest, location);
   return {
     root: validated.root,
     sourceVersion: validated.version,
-    version: IDENTITY_BOOTSTRAP_PACKAGE.version,
+    version: bootstrap.version,
   };
+}
+
+export async function validateIdentityBootstrapRepository(options = {}) {
+  return validatePackageBootstrapRepository(IDENTITY_BOOTSTRAP, options);
+}
+
+export async function validateEntraBootstrapRepository(options = {}) {
+  return validatePackageBootstrapRepository(ENTRA_BOOTSTRAP, options);
 }
 
 function hashTarball(bytes) {
@@ -659,36 +762,37 @@ export async function prepareRelease(options = {}) {
   return { manifestPath, manifest };
 }
 
-async function stageIdentityBootstrapPackage(root, sourceManifest) {
+async function stagePackageBootstrap(bootstrap, root, sourceManifest) {
   const stageRoot = await mkdtemp(
-    join(tmpdir(), "authorization-identity-bootstrap-stage-"),
+    join(tmpdir(), `authorization-${bootstrap.label}-bootstrap-stage-`),
   );
   const packageRoot = join(stageRoot, "package");
   await mkdir(packageRoot);
   for (const filename of ["README.md", "LICENSE"]) {
     await cp(
-      join(root, "packages", IDENTITY_BOOTSTRAP_PACKAGE.directory, filename),
+      join(root, "packages", bootstrap.directory, filename),
       join(packageRoot, filename),
     );
   }
   await cp(
-    join(root, "packages", IDENTITY_BOOTSTRAP_PACKAGE.directory, "dist"),
+    join(root, "packages", bootstrap.directory, "dist"),
     join(packageRoot, "dist"),
     { recursive: true },
   );
   const bootstrapManifest = {
     ...sourceManifest,
-    version: IDENTITY_BOOTSTRAP_PACKAGE.version,
+    version: bootstrap.version,
   };
   validateManifest(
     bootstrapManifest,
-    IDENTITY_BOOTSTRAP_DEFINITION,
-    IDENTITY_BOOTSTRAP_PACKAGE.version,
-    IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion,
+    bootstrap.definition,
+    bootstrap.version,
+    bootstrap.sourceVersion,
   );
-  validateIdentityBootstrapDependencies(
+  validatePackageBootstrapDependencies(
+    bootstrap,
     bootstrapManifest,
-    "staged identity bootstrap package.json",
+    `staged ${bootstrap.label} bootstrap package.json`,
   );
   await writeFile(
     join(packageRoot, "package.json"),
@@ -697,9 +801,13 @@ async function stageIdentityBootstrapPackage(root, sourceManifest) {
   return { stageRoot, packageRoot };
 }
 
-async function inspectIdentityBootstrapTarball(tarball, packageRecord) {
+async function inspectPackageBootstrapTarball(
+  bootstrap,
+  tarball,
+  packageRecord,
+) {
   const extractionRoot = await mkdtemp(
-    join(tmpdir(), "authorization-identity-bootstrap-inspect-"),
+    join(tmpdir(), `authorization-${bootstrap.label}-bootstrap-inspect-`),
   );
   try {
     run("tar", ["-xzf", tarball, "-C", extractionRoot], { capture: true });
@@ -707,13 +815,14 @@ async function inspectIdentityBootstrapTarball(tarball, packageRecord) {
     const manifest = await readJson(join(packageRoot, "package.json"));
     validateManifest(
       manifest,
-      IDENTITY_BOOTSTRAP_DEFINITION,
-      IDENTITY_BOOTSTRAP_PACKAGE.version,
-      IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion,
+      bootstrap.definition,
+      bootstrap.version,
+      bootstrap.sourceVersion,
     );
-    validateIdentityBootstrapDependencies(
+    validatePackageBootstrapDependencies(
+      bootstrap,
       manifest,
-      "packed identity bootstrap package.json",
+      `packed ${bootstrap.label} bootstrap package.json`,
     );
 
     const source = await readFile(
@@ -725,34 +834,23 @@ async function inspectIdentityBootstrapTarball(tarball, packageRecord) {
       /\bfrom\s+["']/u.test(source) ||
       source.includes("require(")
     ) {
-      fail("identity bootstrap runtime is not dependency-free portable ESM");
+      fail(
+        `${bootstrap.label} bootstrap runtime is not dependency-free portable ESM`,
+      );
     }
     const module = await import(
       `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
     );
-    const key = module.identityLinkKeyFromVerifiedIdentityClaims({
-      issuer: "https://identity.example.test",
-      subject: "portable-bootstrap-subject",
-      emailVerified: true,
-    });
-    if (
-      !Object.isFrozen(key) ||
-      !sameJson(key, {
-        issuer: "https://identity.example.test",
-        subject: "portable-bootstrap-subject",
-      })
-    ) {
-      fail("identity bootstrap portable ESM projection failed");
-    }
-    verifyPackageFiles(IDENTITY_BOOTSTRAP_DEFINITION, packageRecord.files);
+    bootstrap.verifyPortableProjection(module);
+    verifyPackageFiles(bootstrap.definition, packageRecord.files);
   } finally {
     await rm(extractionRoot, { recursive: true, force: true });
   }
 }
 
-async function smokeTestIdentityBootstrapTarball(tarball) {
+async function smokeTestPackageBootstrapTarball(bootstrap, tarball) {
   const consumerRoot = await mkdtemp(
-    join(tmpdir(), "authorization-identity-bootstrap-consumer-"),
+    join(tmpdir(), `authorization-${bootstrap.label}-bootstrap-consumer-`),
   );
   try {
     await writeFile(
@@ -763,18 +861,13 @@ async function smokeTestIdentityBootstrapTarball(tarball) {
       ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
       { cwd: consumerRoot },
     );
-    const smoke = [
-      'const module = await import("@pegma/authorization-identity");',
-      "const result = module.identityLinkKeyFromVerifiedIdentityClaims({",
-      '  issuer: "https://identity.example.test",',
-      '  subject: "installed-bootstrap-subject",',
-      "  emailVerified: true,",
-      "});",
-      "if (!Object.isFrozen(result) || Object.keys(result).join() !== 'issuer,subject') process.exit(1);",
-    ].join("\n");
-    run(process.execPath, ["--input-type=module", "--eval", smoke], {
-      cwd: consumerRoot,
-    });
+    run(
+      process.execPath,
+      ["--input-type=module", "--eval", bootstrap.consumerSmokeModule()],
+      {
+        cwd: consumerRoot,
+      },
+    );
     runNpm(["audit", "--omit=dev", "--audit-level=high"], {
       cwd: consumerRoot,
     });
@@ -783,9 +876,9 @@ async function smokeTestIdentityBootstrapTarball(tarball) {
   }
 }
 
-export async function prepareIdentityBootstrap(options = {}) {
+async function preparePackageBootstrap(bootstrap, options = {}) {
   const { root, sourceVersion, version } =
-    await validateIdentityBootstrapRepository(options);
+    await validatePackageBootstrapRepository(bootstrap, options);
   const gitCommit = run(gitCommand(), ["rev-parse", "HEAD"], {
     cwd: root,
     capture: true,
@@ -793,28 +886,26 @@ export async function prepareIdentityBootstrap(options = {}) {
   if (!/^[0-9a-f]{40}$/u.test(gitCommit)) {
     fail(`git returned an invalid commit SHA: ${gitCommit}`);
   }
-  const output = resolve(root, options.output ?? ".identity-bootstrap");
+  const output = resolve(root, options.output ?? bootstrap.defaultOutput);
   await mkdir(output, { recursive: true });
   if ((await readdir(output)).length !== 0) {
-    fail(`identity bootstrap output directory must be empty: ${output}`);
+    fail(
+      `${bootstrap.label} bootstrap output directory must be empty: ${output}`,
+    );
   }
 
   runNpm(["run", "build", "--workspace", "@pegma/authorization-contracts"], {
     cwd: root,
   });
-  runNpm(["run", "prepack", "--workspace", IDENTITY_BOOTSTRAP_PACKAGE.name], {
+  runNpm(["run", "prepack", "--workspace", bootstrap.name], {
     cwd: root,
   });
 
   const sourceManifest = await readJson(
-    join(
-      root,
-      "packages",
-      IDENTITY_BOOTSTRAP_PACKAGE.directory,
-      "package.json",
-    ),
+    join(root, "packages", bootstrap.directory, "package.json"),
   );
-  const { stageRoot, packageRoot } = await stageIdentityBootstrapPackage(
+  const { stageRoot, packageRoot } = await stagePackageBootstrap(
+    bootstrap,
     root,
     sourceManifest,
   );
@@ -834,7 +925,7 @@ export async function prepareIdentityBootstrap(options = {}) {
     const [packed] = JSON.parse(result.stdout);
     packageRecord = await recordPackedPackage(
       output,
-      IDENTITY_BOOTSTRAP_DEFINITION,
+      bootstrap.definition,
       version,
       packed,
     );
@@ -843,8 +934,8 @@ export async function prepareIdentityBootstrap(options = {}) {
   }
 
   const tarball = join(output, packageRecord.tarball);
-  await inspectIdentityBootstrapTarball(tarball, packageRecord);
-  await smokeTestIdentityBootstrapTarball(tarball);
+  await inspectPackageBootstrapTarball(bootstrap, tarball, packageRecord);
+  await smokeTestPackageBootstrapTarball(bootstrap, tarball);
   const registryIntegrity = queryRegistryIntegrity(packageRecord.name, version);
   const registryState =
     decidePublication(packageRecord.integrity, registryIntegrity) === "skip"
@@ -855,16 +946,24 @@ export async function prepareIdentityBootstrap(options = {}) {
   );
 
   const manifest = {
-    schemaVersion: IDENTITY_BOOTSTRAP_SCHEMA_VERSION,
-    kind: IDENTITY_BOOTSTRAP_KIND,
+    schemaVersion: bootstrap.schemaVersion,
+    kind: bootstrap.kind,
     sourceVersion,
     version,
     gitCommit,
     package: packageRecord,
   };
-  const manifestPath = join(output, "identity-bootstrap-manifest.json");
+  const manifestPath = join(output, bootstrap.manifestFile);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return { manifestPath, manifest };
+}
+
+export async function prepareIdentityBootstrap(options = {}) {
+  return preparePackageBootstrap(IDENTITY_BOOTSTRAP, options);
+}
+
+export async function prepareEntraBootstrap(options = {}) {
+  return preparePackageBootstrap(ENTRA_BOOTSTRAP, options);
 }
 
 export function decidePublication(localIntegrity, registryIntegrity) {
@@ -955,56 +1054,67 @@ export async function verifyPreparedReleaseManifest(manifestPath) {
   return manifest;
 }
 
-export async function verifyIdentityBootstrapManifest(manifestPath) {
+async function verifyPackageBootstrapManifest(bootstrap, manifestPath) {
   const manifest = await readJson(manifestPath);
   if (
-    manifest.schemaVersion !== IDENTITY_BOOTSTRAP_SCHEMA_VERSION ||
-    manifest.kind !== IDENTITY_BOOTSTRAP_KIND ||
-    manifest.sourceVersion !== IDENTITY_BOOTSTRAP_PACKAGE.sourceVersion ||
-    manifest.version !== IDENTITY_BOOTSTRAP_PACKAGE.version ||
+    manifest.schemaVersion !== bootstrap.schemaVersion ||
+    manifest.kind !== bootstrap.kind ||
+    manifest.sourceVersion !== bootstrap.sourceVersion ||
+    manifest.version !== bootstrap.version ||
     !/^[0-9a-f]{40}$/u.test(manifest.gitCommit) ||
     typeof manifest.package !== "object" ||
     manifest.package === null ||
-    manifest.package.name !== IDENTITY_BOOTSTRAP_PACKAGE.name ||
-    manifest.package.version !== IDENTITY_BOOTSTRAP_PACKAGE.version ||
-    manifest.package.directory !== IDENTITY_BOOTSTRAP_PACKAGE.directory
+    manifest.package.name !== bootstrap.name ||
+    manifest.package.version !== bootstrap.version ||
+    manifest.package.directory !== bootstrap.directory
   ) {
-    fail("prepared identity bootstrap manifest is invalid");
+    fail(`prepared ${bootstrap.label} bootstrap manifest is invalid`);
   }
-  if (IDENTITY_BOOTSTRAP_DEFINITION === undefined) {
-    fail("identity bootstrap package is missing from the release inventory");
+  if (bootstrap.definition === undefined) {
+    fail(
+      `${bootstrap.label} bootstrap package is missing from the release inventory`,
+    );
   }
-  const expectedTarball = "pegma-authorization-identity-0.0.0.tgz";
   const packageRecord = manifest.package;
   if (
-    packageRecord.tarball !== expectedTarball ||
+    packageRecord.tarball !== bootstrap.expectedTarball ||
     typeof packageRecord.integrity !== "string" ||
     typeof packageRecord.shasum !== "string" ||
     !Array.isArray(packageRecord.files)
   ) {
-    fail("prepared identity bootstrap package metadata is invalid");
+    fail(`prepared ${bootstrap.label} bootstrap package metadata is invalid`);
   }
-  verifyPackageFiles(IDENTITY_BOOTSTRAP_DEFINITION, packageRecord.files);
+  verifyPackageFiles(bootstrap.definition, packageRecord.files);
   const currentCommit = run(gitCommand(), ["rev-parse", "HEAD"], {
     cwd: defaultRoot(),
     capture: true,
   }).stdout.trim();
   if (!safeEqual(currentCommit, manifest.gitCommit)) {
-    fail("prepared identity bootstrap commit does not match the checkout");
+    fail(
+      `prepared ${bootstrap.label} bootstrap commit does not match the checkout`,
+    );
   }
   const tarball = resolve(dirname(manifestPath), packageRecord.tarball);
   if (dirname(tarball) !== resolve(dirname(manifestPath))) {
-    fail("identity bootstrap tarball must be beside its manifest");
+    fail(`${bootstrap.label} bootstrap tarball must be beside its manifest`);
   }
   const hashes = hashTarball(await readFile(tarball));
   if (
     !safeEqual(hashes.integrity, packageRecord.integrity) ||
     !safeEqual(hashes.shasum, packageRecord.shasum)
   ) {
-    fail("prepared identity bootstrap tarball has changed");
+    fail(`prepared ${bootstrap.label} bootstrap tarball has changed`);
   }
-  await inspectIdentityBootstrapTarball(tarball, packageRecord);
+  await inspectPackageBootstrapTarball(bootstrap, tarball, packageRecord);
   return manifest;
+}
+
+export async function verifyIdentityBootstrapManifest(manifestPath) {
+  return verifyPackageBootstrapManifest(IDENTITY_BOOTSTRAP, manifestPath);
+}
+
+export async function verifyEntraBootstrapManifest(manifestPath) {
+  return verifyPackageBootstrapManifest(ENTRA_BOOTSTRAP, manifestPath);
 }
 
 function wait(milliseconds) {
@@ -1109,12 +1219,15 @@ export async function inspectPreparedRegistry(options = {}) {
   return states;
 }
 
-export async function inspectIdentityBootstrapRegistry(options = {}) {
-  requireManualIdentityBootstrap(options);
+async function inspectPackageBootstrapRegistry(bootstrap, options = {}) {
+  requireManualPackageBootstrap(bootstrap, options);
   const manifestPath = resolve(
-    options.manifest ?? ".identity-bootstrap/identity-bootstrap-manifest.json",
+    options.manifest ?? `${bootstrap.defaultOutput}/${bootstrap.manifestFile}`,
   );
-  const manifest = await verifyIdentityBootstrapManifest(manifestPath);
+  const manifest = await verifyPackageBootstrapManifest(
+    bootstrap,
+    manifestPath,
+  );
   const packageRecord = manifest.package;
   const registryIntegrity = queryRegistryIntegrity(
     packageRecord.name,
@@ -1128,6 +1241,14 @@ export async function inspectIdentityBootstrapRegistry(options = {}) {
     `${packageRecord.name}@${packageRecord.version}: ${state}\n`,
   );
   return { name: packageRecord.name, state };
+}
+
+export async function inspectIdentityBootstrapRegistry(options = {}) {
+  return inspectPackageBootstrapRegistry(IDENTITY_BOOTSTRAP, options);
+}
+
+export async function inspectEntraBootstrapRegistry(options = {}) {
+  return inspectPackageBootstrapRegistry(ENTRA_BOOTSTRAP, options);
 }
 
 export function parseArguments(arguments_) {
@@ -1212,8 +1333,27 @@ async function main() {
     await inspectIdentityBootstrapRegistry(options);
     return;
   }
+  if (command === "entra-bootstrap-check") {
+    const { sourceVersion, version } =
+      await validateEntraBootstrapRepository(options);
+    process.stdout.write(
+      `Entra bootstrap metadata is valid for package ${version} from source ${sourceVersion}.\n`,
+    );
+    return;
+  }
+  if (command === "entra-bootstrap-pack") {
+    const { manifestPath } = await prepareEntraBootstrap(options);
+    process.stdout.write(
+      `Prepared entra bootstrap package at ${manifestPath}.\n`,
+    );
+    return;
+  }
+  if (command === "entra-bootstrap-registry-check") {
+    await inspectEntraBootstrapRegistry(options);
+    return;
+  }
   fail(
-    "usage: release-packages.mjs <check|pack|publish|registry-check|identity-bootstrap-check|identity-bootstrap-pack|identity-bootstrap-registry-check> [options]",
+    "usage: release-packages.mjs <check|pack|publish|registry-check|identity-bootstrap-check|identity-bootstrap-pack|identity-bootstrap-registry-check|entra-bootstrap-check|entra-bootstrap-pack|entra-bootstrap-registry-check> [options]",
   );
 }
 

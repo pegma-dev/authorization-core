@@ -11,6 +11,8 @@ Provider-neutral roles, entitlements, and permissions for SaaS applications.
 > `@pegma/authorization-identity` has its manual-only `0.0.0` bootstrap, and
 > the synchronized `0.1.2` release is its first advertised stable publication.
 > The `0.1.1` workflow stopped before packing or publishing any package.
+> `@pegma/authorization-entra` lands as the ninth package and follows the same
+> one-time `0.0.0` bootstrap before a synchronized `0.1.4` release.
 
 ## Why Authorization Core?
 
@@ -30,7 +32,7 @@ Application roles ──┘
 
 ## Design principles
 
-- **Provider-neutral:** Auth0 and Stripe integrations are adapters, not
+- **Provider-neutral:** Auth0, Entra, and Stripe integrations are adapters, not
   requirements.
 - **Explicit permissions:** Applications authorize actions, not plan names.
 - **Separate roles from purchases:** Staff responsibility and commercial access
@@ -43,16 +45,17 @@ Application roles ──┘
 
 ## Current packages
 
-| Package                          | Purpose                                         |
-| -------------------------------- | ----------------------------------------------- |
-| `@pegma/authorization-contracts` | Provider-neutral access and policy types        |
-| `@pegma/authorization-core`      | Pure permission resolution and access decisions |
-| `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics     |
-| `@pegma/authorization-auth0`     | Verified Auth0 claims to identity-link keys     |
-| `@pegma/authorization-identity`  | Verified first-party claims to identity keys    |
-| `@pegma/authorization-stripe`    | Trusted Stripe IDs to active entitlements       |
-| `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core`    |
-| `@pegma/authorization-tokens`    | Signed one-use grants, JWKS, and verification   |
+| Package                          | Purpose                                          |
+| -------------------------------- | ------------------------------------------------ |
+| `@pegma/authorization-contracts` | Provider-neutral access and policy types         |
+| `@pegma/authorization-core`      | Pure permission resolution and access decisions  |
+| `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics      |
+| `@pegma/authorization-auth0`     | Verified Auth0 claims to identity-link keys      |
+| `@pegma/authorization-entra`     | Verified Entra `iss`/`oid` to identity-link keys |
+| `@pegma/authorization-identity`  | Verified first-party claims to identity keys     |
+| `@pegma/authorization-stripe`    | Trusted Stripe IDs to active entitlements        |
+| `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core`     |
+| `@pegma/authorization-tokens`    | Signed one-use grants, JWKS, and verification    |
 
 Storage declares its collections against a `@pegma/storage-core` `Store`, so
 the assignment-and-audit transaction boundary closes in one single-partition
@@ -83,7 +86,7 @@ Integration documentation:
 - [Getting started](docs/GETTING_STARTED.md)
 - [Policy reference](docs/POLICY.md) and
   [permission naming](docs/PERMISSIONS.md)
-- [Auth0](docs/AUTH0.md), [Stripe](docs/STRIPE.md), and
+- [Auth0](docs/AUTH0.md), [Entra](docs/ENTRA.md), [Stripe](docs/STRIPE.md), and
   [adapter authoring](docs/ADAPTER_AUTHORING.md)
 - [Adapter conformance suites (pending the next release)](docs/ADAPTER_AUTHORING.md#public-conformance-suites)
 - [Role assignments](docs/ROLE_ASSIGNMENTS.md),
@@ -311,10 +314,11 @@ must not advance it. The low-level translator remains available for trusted
 webhook and reconciliation pipelines, but wrapping transient request facts in a
 custom adapter bypasses this supported request-time boundary. See the
 [identity-linking guide](docs/IDENTITY_LINKING.md) for the normative model and
-lifecycle requirements, the [Auth0 guide](docs/AUTH0.md) for verification
-prerequisites and identity translation, and the
-[Stripe guide](docs/STRIPE.md) for the billing trust boundary and translation
-modes. Application-owned staff grants follow the immutable
+lifecycle requirements, the [Auth0 guide](docs/AUTH0.md) and
+[Entra guide](docs/ENTRA.md) for verification prerequisites and identity
+translation, and the [Stripe guide](docs/STRIPE.md) for the billing trust
+boundary and translation modes. Application-owned staff grants follow the
+immutable
 [role-assignment model](docs/ROLE_ASSIGNMENTS.md): the host selects active
 assignments by exact principal and target-derived scope, then passes role names
 only into access resolution. The

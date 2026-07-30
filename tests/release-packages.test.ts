@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ENTRA_BOOTSTRAP_PACKAGE,
   IDENTITY_BOOTSTRAP_PACKAGE,
   RELEASE_PACKAGES,
   decidePublication,
   parseArguments,
   releaseImportSpecifiers,
+  validateEntraBootstrapRepository,
   validateIdentityBootstrapRepository,
   validateReleaseTag,
   validateRepository,
@@ -36,6 +38,7 @@ describe("release package metadata", () => {
     expect(RELEASE_PACKAGES.map(({ name }) => name)).toEqual([
       "@pegma/authorization-contracts",
       "@pegma/authorization-auth0",
+      "@pegma/authorization-entra",
       "@pegma/authorization-identity",
       "@pegma/authorization-core",
       "@pegma/authorization-policy",
@@ -49,6 +52,7 @@ describe("release package metadata", () => {
     expect(releaseImportSpecifiers()).toEqual([
       "@pegma/authorization-contracts",
       "@pegma/authorization-auth0",
+      "@pegma/authorization-entra",
       "@pegma/authorization-identity",
       "@pegma/authorization-core",
       "@pegma/authorization-core/conformance",
@@ -118,7 +122,7 @@ describe("release package metadata", () => {
     );
     const identityBootstrap = releaseGuide
       .split("## Bootstrap for the new Identity adapter package")[1]
-      ?.split("## First advertised release and later releases")[0];
+      ?.split("## Bootstrap for the new Entra adapter package")[0];
     expect(identityBootstrap).toBeDefined();
     expect(identityBootstrap).toContain(
       "git fetch origin tag authorization-identity-v0.0.0",
@@ -133,6 +137,73 @@ describe("release package metadata", () => {
       "do not recreate, move, or force the tag",
     );
     expect(identityBootstrap).not.toMatch(/\bgit tag\b/);
+  });
+
+  it("keeps the entra name-reservation bootstrap package-only and version-split", async () => {
+    expect(ENTRA_BOOTSTRAP_PACKAGE).toEqual({
+      directory: "entra",
+      name: "@pegma/authorization-entra",
+      sourceVersion: "0.1.3",
+      version: "0.0.0",
+    });
+    const releaseEnvironmentKeys = [
+      "RELEASE_TAG",
+      "RELEASE_COMMIT",
+      "RELEASE_PRERELEASE",
+      "GITHUB_EVENT_NAME",
+      "ACTIONS_ID_TOKEN_REQUEST_URL",
+      "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    ] as const;
+    const releaseEnvironment = new Map(
+      releaseEnvironmentKeys.map((key) => [key, process.env[key]]),
+    );
+    try {
+      for (const key of releaseEnvironmentKeys) delete process.env[key];
+      await expect(validateEntraBootstrapRepository()).resolves.toMatchObject({
+        sourceVersion: "0.1.3",
+        version: "0.0.0",
+      });
+    } finally {
+      for (const [key, value] of releaseEnvironment) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+    await expect(
+      validateEntraBootstrapRepository({ releaseTag: "v0.1.3" }),
+    ).rejects.toThrow("refuses release or OIDC authority");
+
+    const rootManifest = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(rootManifest.scripts["entra-bootstrap:pack"]).toContain(
+      "entra-bootstrap-pack",
+    );
+    expect(rootManifest.scripts["entra-bootstrap:registry:check"]).toContain(
+      "entra-bootstrap-registry-check",
+    );
+    expect(rootManifest.scripts["entra-bootstrap:publish"]).toBeUndefined();
+  });
+
+  it("documents the Entra bootstrap ceremony without a publish command", () => {
+    const releaseGuide = readFileSync(
+      join(process.cwd(), "docs", "RELEASING.md"),
+      "utf8",
+    );
+    const entraBootstrap = releaseGuide
+      .split("## Bootstrap for the new Entra adapter package")[1]
+      ?.split("## First advertised release and later releases")[0];
+    expect(entraBootstrap).toBeDefined();
+    expect(entraBootstrap).toContain("authorization-entra-v0.0.0");
+    expect(entraBootstrap).toMatch(
+      /git fetch origin\r?\ngit fetch origin tag authorization-entra-v0\.0\.0/u,
+    );
+    expect(entraBootstrap).toContain("npm run entra-bootstrap:check");
+    expect(entraBootstrap).toContain(
+      "npm publish .entra-bootstrap/pegma-authorization-entra-0.0.0.tgz",
+    );
+    expect(entraBootstrap).toContain("0.1.4");
+    expect(entraBootstrap).not.toMatch(/\bentra-bootstrap:publish\b/);
   });
 
   it("never accepts a bootstrap manifest as a synchronized release manifest", async () => {

@@ -6,7 +6,8 @@
 next (the signed `v0.1.0` release published the original seven packages through
 OIDC with provenance on 2026-07-27; synchronized `v0.1.2` corrects the
 pre-publish `v0.1.1` release-test failure and first advertises Identity as the
-eighth package; `0.x` public API remains unstable)
+eighth package; Entra lands as the ninth package pending its `0.0.0` bootstrap
+and synchronized `0.1.4` release; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
 
@@ -200,6 +201,7 @@ The repository will stay a monorepo while the public contracts mature.
 | `@pegma/authorization-core`      | Pure resolution and access decisions         | Foundation     |
 | `@pegma/authorization-policy`    | Policy parsing, validation, and diagnostics  | Phase 1        |
 | `@pegma/authorization-auth0`     | Verified Auth0 `iss`/`sub` to identity key   | Phase 2        |
+| `@pegma/authorization-entra`     | Verified Entra `iss`/`oid` to identity key   | Phase 6        |
 | `@pegma/authorization-identity`  | First-party claims to an identity-link key   | Phase 6        |
 | `@pegma/authorization-stripe`    | Stripe state to active entitlements          | Phase 2        |
 | `@pegma/authorization-storage`   | Persistence ports over `@pegma/storage-core` | Phase 3        |
@@ -212,10 +214,11 @@ The first-party `@pegma/authorization-identity` adapter is implemented after
 its Phase 5 and real-claims gates opened; its exact projection and publication
 boundary are recorded in
 [docs/IDENTITY_ADAPTER.md](IDENTITY_ADAPTER.md). The
-`@pegma/authorization-entra` adapter remains decided but deliberately
-unimplemented until a real post-Phase-5 consumer needs it; see
-[docs/ENTRA_ADAPTER.md](ENTRA_ADAPTER.md). Both keep the Auth0 package's
-pure-projection boundary.
+`@pegma/authorization-entra` adapter is implemented after both timing gates
+opened on 2026-07-29 (synchronized `0.1.2` release and the Exsimplify Entra
+External ID consumer); see [docs/ENTRA_ADAPTER.md](ENTRA_ADAPTER.md). Both keep
+the Auth0 package's pure-projection boundary. Entra links on tenant-scoped
+`oid` under the v2 issuer profile only.
 
 Other providers should be implementable outside this repository by depending
 on public contracts and running a published conformance suite.

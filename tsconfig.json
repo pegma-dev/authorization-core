@@ -11,6 +11,9 @@
       "path": "./packages/auth0"
     },
     {
+      "path": "./packages/entra"
+    },
+    {
       "path": "./packages/identity-link"
     },
     {

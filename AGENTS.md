@@ -78,6 +78,11 @@ workflow stopped in its unprivileged test step before packing or publishing
 anything. Version `0.1.2` corrects only that release test and is the adapter's
 first advertised stable publication.
 
+`@pegma/authorization-entra` is the ninth package. It lands after both timing
+gates in `docs/ENTRA_ADAPTER.md` opened, follows the same one-time `0.0.0`
+bootstrap under the non-default `bootstrap` dist-tag, and joins the
+synchronized inventory at `0.1.4`.
+
 ## Where things stand
 
 Foundation and Phases 1 through 5 are complete, including signed access grants,
@@ -105,7 +110,7 @@ lifecycle code, all deliberate:
 `docs/PROJECT_PLAN.md` is the source of truth for scope, phases, and decisions
 already made. Then the document for whatever you are touching:
 `docs/POLICY.md`, `docs/ROLE_ASSIGNMENTS.md`, `docs/ROLE_REVOCATION.md`,
-`docs/STORAGE.md`, `docs/AUTH0.md`, `docs/STRIPE.md`,
+`docs/STORAGE.md`, `docs/AUTH0.md`, `docs/ENTRA.md`, `docs/STRIPE.md`,
 `docs/ADMINISTRATOR_BOOTSTRAP.md`.
 
 Siblings: [storage-core](https://github.com/pegma-dev/storage-core),

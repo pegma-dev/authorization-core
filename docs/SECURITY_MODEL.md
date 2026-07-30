@@ -19,7 +19,7 @@ is the integration review checklist.
 - Identity is usable only after signature, issuer, audience, lifetime, token
   kind, and flow-specific verification. Provider subject is always paired with
   exact issuer; email is never an authorization key. See
-  [Auth0](AUTH0.md) and [Identity linking](IDENTITY_LINKING.md).
+  [Auth0](AUTH0.md), [Entra](ENTRA.md), and [Identity linking](IDENTITY_LINKING.md).
 - Billing is usable only after webhook authenticity, ordering, deduplication,
   lifecycle interpretation, customer-to-principal binding, complete
   reconciliation, durable persistence, and freshness enforcement. See
