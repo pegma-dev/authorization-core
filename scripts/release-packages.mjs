@@ -75,6 +75,12 @@ export const RELEASE_PACKAGES = [
     modules: ["collections", "index", "role-store"],
   },
   {
+    directory: "admin",
+    name: "@pegma/authorization-admin",
+    exports: ["."],
+    modules: ["index"],
+  },
+  {
     directory: "tokens",
     name: "@pegma/authorization-tokens",
     exports: [".", "./testing"],

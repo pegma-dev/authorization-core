@@ -44,6 +44,7 @@ describe("release package metadata", () => {
       "@pegma/authorization-policy",
       "@pegma/authorization-stripe",
       "@pegma/authorization-storage",
+      "@pegma/authorization-admin",
       "@pegma/authorization-tokens",
     ]);
   });
@@ -59,6 +60,7 @@ describe("release package metadata", () => {
       "@pegma/authorization-policy",
       "@pegma/authorization-stripe",
       "@pegma/authorization-storage",
+      "@pegma/authorization-admin",
       "@pegma/authorization-tokens",
       "@pegma/authorization-tokens/testing",
     ]);

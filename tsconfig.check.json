@@ -7,6 +7,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
+      "@pegma/authorization-admin": ["./packages/admin/src/index.ts"],
       "@pegma/authorization-auth0": ["./packages/auth0/src/index.ts"],
       "@pegma/authorization-contracts": ["./packages/contracts/src/index.ts"],
       "@pegma/authorization-core": ["./packages/core/src/index.ts"],

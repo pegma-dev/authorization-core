@@ -8,6 +8,9 @@
       "path": "./packages/storage"
     },
     {
+      "path": "./packages/admin"
+    },
+    {
       "path": "./packages/auth0"
     },
     {
