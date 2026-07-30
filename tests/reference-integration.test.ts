@@ -384,6 +384,45 @@ describe("Phase 5 reference integration", () => {
     expect(mismatchedRetry.status).toBe(409);
   });
 
+  it("refuses an administrative body larger than the accepted size", async () => {
+    const integration = await createReferenceIntegration({
+      nowEpochMs: () => fixedNow,
+      authorizeAdministrativeRequest: async () =>
+        SYNTHETIC_ADMINISTRATIVE_ACTOR,
+    });
+    const running = await integration.start();
+    runningServers.push(running);
+
+    const oversized = await fetch(
+      `${running.url}/admin/role-assignments/grant`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "http-oversized-body-v1",
+        },
+        body: JSON.stringify({
+          principalId: "principal-reference-001",
+          role: "reviewer",
+          scope: { kind: "application" },
+          padding: "x".repeat(64 * 1_024),
+        }),
+      },
+    );
+
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toEqual({
+      error: "request_too_large",
+    });
+
+    // Refused before the command was ever parsed, so nothing was granted.
+    const active = await integration.roleStore.listActiveRoleAssignments(
+      "principal-reference-001",
+      { kind: "application" },
+    );
+    expect(active.map(({ role }) => role)).not.toContain("reviewer");
+  });
+
   it("emits safe structured logs without credentials or provider facts", async () => {
     const integration = await createReferenceIntegration();
     const grant = await integration.issueApplicationGrant();

@@ -7,7 +7,9 @@ import {
   isCanonicalBase64Url32,
   isKid,
   JWK_FIELDS,
+  JWKS_FETCH_TIMEOUT_MS,
   MAX_JWKS_CACHE_AGE_MS,
+  MAX_JWKS_RESPONSE_BYTES,
   parseStrictJson,
   UNKNOWN_KID_REFRESH_INTERVAL_MS,
 } from "./internal.js";
@@ -160,19 +162,61 @@ export async function createAccessGrantJwks(
   return Object.freeze({ keys: Object.freeze(keys) });
 }
 
+/**
+ * Read a response body while never buffering more than the accepted size.
+ *
+ * The body is streamed so that an oversized document is abandoned as soon as it
+ * crosses the bound, rather than being buffered whole and measured afterwards.
+ */
+async function readBoundedBody(response: Response): Promise<Uint8Array> {
+  const stream = response.body;
+  if (stream === null) {
+    return new Uint8Array(0);
+  }
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_JWKS_RESPONSE_BYTES) {
+        fail("JWKS response exceeds the accepted size");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    // Releases the connection whether the read completed or was abandoned.
+    await reader.cancel().catch(() => undefined);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 export async function defaultJwksFetcher(
   url: string,
 ): Promise<JwksFetchResult> {
+  // A hung endpoint would otherwise stall every verifier sharing this cache,
+  // because one refresh is serialized for all of them.
   const response = await fetch(url, {
     method: "GET",
     redirect: "follow",
     headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(JWKS_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     fail("JWKS fetch failed");
   }
   return {
-    body: new Uint8Array(await response.arrayBuffer()),
+    body: await readBoundedBody(response),
     finalUrl: response.url,
   };
 }
