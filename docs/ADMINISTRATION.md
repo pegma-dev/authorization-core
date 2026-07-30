@@ -38,13 +38,16 @@ ONE-TIME (bootstrap seeds, guard compensation), are `human` (editable).
 Actor inference alone is not policy — the one-time set is explicit
 configuration, a lesson from the reference host.
 
-**Audited assign.** A permission-checked grant of a host-policy role with a
-caller-supplied or generated assignment id, an audit event, and duplicate
-refusal delegated to the store's active-tuple guarantee. The holder-index
-row is written BEFORE the grant through the host port (superset invariant,
-`docs/STORAGE.md` recipe), and only after a pre-check that the tuple is not
-already active — a dangling row must be possible only from a crash, not
-from a routine duplicate attempt.
+**Audited assign.** A grant of a host-policy role — authorized by the HOST
+before the call, see the ports section — with a caller-supplied assignment
+id, an audit event, and duplicate refusal delegated to the store's
+active-tuple guarantee. The holder-index row is written BEFORE the grant
+through the host port (superset invariant, `docs/STORAGE.md` recipe),
+after a pre-check that the tuple is not already active. Dangling rows
+still arise — from a crash between the two writes, or from a grant the
+store refuses after the row landed (a race past the pre-check) — exactly
+as the recipe allows: the pre-check keeps them rare, verify-on-read keeps
+them harmless.
 
 **Audited revoke with the last-administrator guard.** Revoking the
 administrator role runs the guard the reference host proved out, and the
@@ -58,13 +61,28 @@ implementation detail:
 3. after an administrator revoke commits, the guard RE-VERIFIES and, if no
    active administrator remains (a concurrent revoke on another instance
    won its race), writes a compensation grant with a dedicated system
-   actor. In-process serialization cannot span instances; the compensation
-   is what makes the guarantee honest. The compensation actor is in the
-   default one-time set: the resulting assignment is human-managed.
+   actor. The compensation actor is in the default one-time set: the
+   resulting assignment is human-managed.
 
 The guard can only refuse harmlessly, never allow harmfully: the holder
 index over-reports at worst, and every candidate is verified against the
 authoritative store before it counts.
+
+**What the guard does NOT promise.** Records for different principals live
+in different partitions, so no single-partition transaction can make
+"at least one administrator remains" atomic — the same boundary that
+declined a first-class guard primitive in #24. The serialization closes
+the single-instance race; the compensation closes the cross-instance race
+when the re-verify runs; a process that dies between the revoke commit and
+the compensation leaves a residual window this design deliberately does
+not paper over with a durable coordinator (that would be new persistence,
+and a coordinator this package owns is exactly what the hard rules
+forbid). Total administrator loss is instead RECOVERABLE BY DESIGN through
+the existing out-of-band path: the `docs/ADMINISTRATOR_BOOTSTRAP.md`
+ceremony re-seeds a verified principal via the seed helper below — the
+same "separately controlled recovery procedure" the project plan already
+names for administrator loss. The failure window is narrow, refusals are
+the common case, and the recovery is documented rather than implied.
 
 **Per-principal history.** The complete lifecycle for one principal via
 `listRoleAssignments` (0.3.0) — grant and revocation evidence rendered as
@@ -74,14 +92,21 @@ appear because the store is the authority.
 **One-time seed helper.** Both hosts wrote the same bootstrap-adjacent
 function; the third copy would be in this package's README, so it belongs
 in the package: `ensureSeededAssignment` grants a role once per principal,
-ever, with a deterministic assignment id and a system actor, treating ANY
-existing assignment record for that role — active or revoked, whatever its
-provenance — as already-seeded (`listRoleAssignments`; revocation is
-durable evidence, proven on pegma.dev). This is a pure function over the
-ports. It is NOT a bootstrap endpoint, tool, credential, or coordinator —
-`docs/ADMINISTRATOR_BOOTSTRAP.md` remains normative for the ceremony that
-decides WHETHER and FOR WHOM to call it, and everything that document
-forbids stays forbidden.
+ever, with a system actor, treating ANY existing assignment record for
+that role — active or revoked, whatever its provenance — as already-seeded
+(`listRoleAssignments`; revocation is durable evidence, proven on
+pegma.dev). The assignment id is a fresh opaque id the CALLER supplies
+from its ceremony manifest and retains for retries — an exact replay is
+the store's ordinary `unchanged`, and the history check makes even a
+lost manifest converge. The id is NOT derived from the principal or role:
+`docs/ROLE_ASSIGNMENTS.md` forbids encoding meaning into lifecycle ids,
+and the reference hosts' earlier deterministic-id scheme (their records
+are grandfathered — ids are opaque) stopped being load-bearing the moment
+lifecycle history became the already-seeded signal. This is a pure
+function over the ports. It is NOT a bootstrap endpoint, tool, credential,
+or coordinator — `docs/ADMINISTRATOR_BOOTSTRAP.md` remains normative for
+the ceremony that decides WHETHER and FOR WHOM to call it, and everything
+that document forbids stays forbidden.
 
 ## What the package refuses
 
@@ -125,7 +150,7 @@ index collection reached through the port.
 
 pegma.dev (its plan's Phase 5): map `Admin` in the policy → one-time Admin
 seed via the ceremony + seed helper (`PEGMA_ADMIN_BOOTSTRAP_PRINCIPALS`,
-deterministic id, delete the var after) → ship the surface gated on
+fresh manifest-retained id, delete the var after) → ship the surface gated on
 `Admin`, guard meaningful from the first request. retiregolden.org:
 replace `api/src/lib/admin-handlers.js` internals with the service behind
 the existing routes, keeping the HTTP envelope, rate limits, and UI
