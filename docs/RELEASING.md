@@ -344,9 +344,9 @@ git verify-tag v0.1.0
 gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
 ```
 
-For this prepared release, use `v0.2.0` consistently in those commands after
+For this prepared release, use `v0.3.0` consistently in those commands after
 the reviewed release pull request merges. Never move the existing `v0.1.0`,
-`v0.1.1`, `v0.1.2`, `v0.1.3`, or `v0.1.4` tags.
+`v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.4`, or `v0.2.0` tags.
 
 The workflow's unprivileged preparation job checks out the fully qualified tag,
 requires an approved valid SSH-signed annotated tag, and proves that the tag
