@@ -248,7 +248,12 @@ Always prepare the name-reservation artifact from that tag, never from a later
 synchronized release branch. The dedicated package-only gate stages only the
 new package with publish version `0.0.0`:
 
+The first fetch is not optional. `--require-main-ancestor` asks whether the
+checked-out commit is an ancestor of `origin/main`, so a tag-only fetch would
+leave a stale remote-tracking branch and reject a perfectly valid new tag.
+
 ```sh
+git fetch origin
 git fetch origin tag authorization-entra-v0.0.0
 git verify-tag authorization-entra-v0.0.0
 git switch --detach authorization-entra-v0.0.0

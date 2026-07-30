@@ -69,9 +69,10 @@ case.
 
 Only the v2 issuer profile is accepted: the exact preserved `iss` string must
 end with the case-sensitive suffix `/v2.0`. There is no silent v1→v2
-canonicalization. A v1 `sts.windows.net` issuer throws a `TypeError` that names
-the v1 token profile and tells the host to move the app registration to v2
-tokens. Any other issuer lacking the `/v2.0` suffix also throws.
+canonicalization. An issuer that begins with the exact v1 prefix
+`https://sts.windows.net/` throws a `TypeError` that names the v1 token profile
+and tells the host to move the app registration to v2 tokens. Any other issuer
+lacking the `/v2.0` suffix also throws, with the generic suffix message.
 
 Workforce issuers (`https://login.microsoftonline.com/{tid}/v2.0`) and Entra
 External ID CIAM issuers (`https://{name}.ciamlogin.com/{tid}/v2.0`) both pass

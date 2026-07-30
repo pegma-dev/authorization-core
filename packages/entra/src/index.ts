@@ -11,6 +11,7 @@ export interface EntraIssuerObjectIdClaims {
 }
 
 const V2_ISSUER_SUFFIX = "/v2.0";
+const V1_ISSUER_PREFIX = "https://sts.windows.net/";
 
 const readOwnStringClaim = (
   claims: object,
@@ -36,7 +37,7 @@ const assertV2Issuer = (issuer: string): void => {
     return;
   }
 
-  if (issuer.includes("sts.windows.net")) {
+  if (issuer.startsWith(V1_ISSUER_PREFIX)) {
     throw new TypeError(
       "Entra claims issuer uses the v1 token profile (sts.windows.net); configure the app registration for v2 tokens so the issuer ends with /v2.0",
     );

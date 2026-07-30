@@ -121,6 +121,20 @@ describe("identityLinkKeyFromVerifiedEntraClaims", () => {
     }
   });
 
+  it("names the v1 profile only for the exact v1 issuer origin", () => {
+    try {
+      identityLinkKeyFromVerifiedEntraClaims({
+        iss: `https://sts.windows.net.example.test/${tenantId}/`,
+        oid: objectId,
+      });
+      expect.unreachable("expected TypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as TypeError).message).not.toMatch(/v1 token profile/u);
+      expect((error as TypeError).message).toMatch(/\/v2\.0/u);
+    }
+  });
+
   it.each([
     [
       "v1 login.microsoftonline.com without suffix",

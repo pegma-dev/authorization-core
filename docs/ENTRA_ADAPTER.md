@@ -145,10 +145,13 @@ The single behavior beyond the Auth0 shape, encoding the "v2 only" decision:
 - After the own-data checks, the exact preserved `iss` string must end with
   the case-sensitive suffix `/v2.0`. No URL parsing, trimming, host
   allowlisting, or rewriting — the value is still copied exactly.
-- Rejection is a `TypeError`. When the rejected issuer contains
-  `sts.windows.net`, the message names the v1 token profile and says to move
-  the app registration to v2 tokens, so the most likely misconfiguration is
-  loud and diagnosable rather than generically malformed.
+- Rejection is a `TypeError`. When the rejected issuer begins with the exact v1
+  prefix `https://sts.windows.net/`, the message names the v1 token profile and
+  says to move the app registration to v2 tokens, so the most likely
+  misconfiguration is loud and diagnosable rather than generically malformed. A
+  prefix rather than a substring test keeps the diagnostic bound to the real v1
+  origin: an unrelated host such as `sts.windows.net.example.test` gets the
+  generic suffix message.
 - Workforce (`https://login.microsoftonline.com/{tid}/v2.0`) and External ID
   CIAM (`https://{name}.ciamlogin.com/{tid}/v2.0`) issuers both pass and
   remain distinct tuples — exact issuer namespacing is doing its job, not a
@@ -173,8 +176,9 @@ operational-failure propagation), then add the Entra-specific pins:
   `{ issuer, subject: oid }` — and never the `sub` value;
 - the same `oid` under the workforce and CIAM issuer forms yields distinct
   tuples;
-- a v1 `sts.windows.net` issuer throws with the v1-specific diagnostic; any
-  issuer without the `/v2.0` suffix throws;
+- a v1 `https://sts.windows.net/` issuer throws with the v1-specific
+  diagnostic, while a lookalike host merely containing that string gets the
+  generic message; any issuer without the `/v2.0` suffix throws;
 - `oid` is preserved exactly with no GUID case normalization;
 - `email` and `preferred_username` never appear in outputs or in thrown
   messages (the sensitive-field exclusion the authoring guide requires).
