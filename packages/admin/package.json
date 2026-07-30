@@ -33,6 +33,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "check": "tsc -p tsconfig.json --noEmit"
   }
 }

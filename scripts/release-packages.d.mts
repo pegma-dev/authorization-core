@@ -19,6 +19,13 @@ export interface EntraBootstrapPackageDefinition {
   readonly version: "0.0.0";
 }
 
+export interface AdminBootstrapPackageDefinition {
+  readonly directory: "admin";
+  readonly name: "@pegma/authorization-admin";
+  readonly sourceVersion: "0.3.0";
+  readonly version: "0.0.0";
+}
+
 export interface ValidationOptions {
   readonly root?: string;
   readonly releaseTag?: string;
@@ -37,6 +44,7 @@ export interface ReleaseCommandOptions extends ValidationOptions {
 export const RELEASE_PACKAGES: readonly ReleasePackageDefinition[];
 export const IDENTITY_BOOTSTRAP_PACKAGE: IdentityBootstrapPackageDefinition;
 export const ENTRA_BOOTSTRAP_PACKAGE: EntraBootstrapPackageDefinition;
+export const ADMIN_BOOTSTRAP_PACKAGE: AdminBootstrapPackageDefinition;
 
 export function releaseImportSpecifiers(
   definitions?: readonly ReleasePackageDefinition[],
@@ -66,6 +74,18 @@ export function validateEntraBootstrapRepository(
   version: "0.0.0";
 }>;
 
+export function validateAdminBootstrapRepository(
+  options?: ValidationOptions,
+): Promise<{
+  root: string;
+  sourceVersion: "0.3.0";
+  version: "0.0.0";
+}>;
+
+export function prepareAdminBootstrap(
+  options?: ReleaseCommandOptions,
+): Promise<{ manifestPath: string; manifest: unknown }>;
+
 export function prepareIdentityBootstrap(
   options?: ReleaseCommandOptions,
 ): Promise<{ manifestPath: string; manifest: unknown }>;
@@ -78,12 +98,20 @@ export function verifyPreparedReleaseManifest(
   manifestPath: string,
 ): Promise<unknown>;
 
+export function verifyAdminBootstrapManifest(
+  manifestPath: string,
+): Promise<unknown>;
+
 export function verifyIdentityBootstrapManifest(
   manifestPath: string,
 ): Promise<unknown>;
 
 export function verifyEntraBootstrapManifest(
   manifestPath: string,
+): Promise<unknown>;
+
+export function inspectAdminBootstrapRegistry(
+  options?: ReleaseCommandOptions,
 ): Promise<unknown>;
 
 export function inspectIdentityBootstrapRegistry(

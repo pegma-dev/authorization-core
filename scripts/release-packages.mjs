@@ -192,6 +192,49 @@ const ENTRA_BOOTSTRAP = packageBootstrapDefinition({
   },
 });
 
+const ADMIN_BOOTSTRAP = packageBootstrapDefinition({
+  directory: "admin",
+  name: "@pegma/authorization-admin",
+  sourceVersion: "0.3.0",
+  version: "0.0.0",
+  kind: "authorization-admin-package-bootstrap",
+  schemaVersion: 1,
+  label: "admin",
+  defaultOutput: ".admin-bootstrap",
+  manifestFile: "admin-bootstrap-manifest.json",
+  dependencies: {
+    "@pegma/authorization-contracts": "0.3.0",
+    "@pegma/authorization-storage": "0.3.0",
+  },
+  verifyPortableProjection(module) {
+    const ongoing = module.assignmentManagedBy(
+      { grantedBy: { kind: "system", systemId: "entitlement-sync" } },
+      { administratorRole: "Admin" },
+    );
+    const oneTime = module.assignmentManagedBy(
+      { grantedBy: { kind: "system", systemId: "bootstrap" } },
+      { administratorRole: "Admin" },
+    );
+    if (ongoing !== "system" || oneTime !== "human") {
+      fail("admin bootstrap portable ESM projection failed");
+    }
+  },
+  consumerSmokeModule() {
+    return [
+      'const module = await import("@pegma/authorization-admin");',
+      "const ongoing = module.assignmentManagedBy(",
+      '  { grantedBy: { kind: "system", systemId: "entitlement-sync" } },',
+      '  { administratorRole: "Admin" },',
+      ");",
+      "const oneTime = module.assignmentManagedBy(",
+      '  { grantedBy: { kind: "system", systemId: "bootstrap" } },',
+      '  { administratorRole: "Admin" },',
+      ");",
+      'if (ongoing !== "system" || oneTime !== "human") process.exit(1);',
+    ].join("\n");
+  },
+});
+
 export const IDENTITY_BOOTSTRAP_PACKAGE = Object.freeze({
   directory: IDENTITY_BOOTSTRAP.directory,
   name: IDENTITY_BOOTSTRAP.name,
@@ -204,6 +247,13 @@ export const ENTRA_BOOTSTRAP_PACKAGE = Object.freeze({
   name: ENTRA_BOOTSTRAP.name,
   sourceVersion: ENTRA_BOOTSTRAP.sourceVersion,
   version: ENTRA_BOOTSTRAP.version,
+});
+
+export const ADMIN_BOOTSTRAP_PACKAGE = Object.freeze({
+  directory: ADMIN_BOOTSTRAP.directory,
+  name: ADMIN_BOOTSTRAP.name,
+  sourceVersion: ADMIN_BOOTSTRAP.sourceVersion,
+  version: ADMIN_BOOTSTRAP.version,
 });
 
 const INTERNAL_NAMES = new Set(RELEASE_PACKAGES.map(({ name }) => name));
@@ -533,13 +583,14 @@ function requireManualPackageBootstrap(bootstrap, options = {}) {
 }
 
 function validatePackageBootstrapDependencies(bootstrap, manifest, location) {
-  const expected = {
+  const expected = bootstrap.dependencies ?? {
     "@pegma/authorization-contracts": bootstrap.sourceVersion,
   };
   if (!sameJson(manifest.dependencies, expected)) {
-    fail(
-      `${location} must depend only on exact @pegma/authorization-contracts@${bootstrap.sourceVersion}`,
-    );
+    const expectedList = Object.entries(expected)
+      .map(([name, version]) => `${name}@${version}`)
+      .join(" and ");
+    fail(`${location} must depend only on exact ${expectedList}`);
   }
   for (const section of [
     "devDependencies",
@@ -584,6 +635,10 @@ export async function validateIdentityBootstrapRepository(options = {}) {
 
 export async function validateEntraBootstrapRepository(options = {}) {
   return validatePackageBootstrapRepository(ENTRA_BOOTSTRAP, options);
+}
+
+export async function validateAdminBootstrapRepository(options = {}) {
+  return validatePackageBootstrapRepository(ADMIN_BOOTSTRAP, options);
 }
 
 function hashTarball(bytes) {
@@ -968,6 +1023,10 @@ export async function prepareIdentityBootstrap(options = {}) {
   return preparePackageBootstrap(IDENTITY_BOOTSTRAP, options);
 }
 
+export async function prepareAdminBootstrap(options = {}) {
+  return preparePackageBootstrap(ADMIN_BOOTSTRAP, options);
+}
+
 export async function prepareEntraBootstrap(options = {}) {
   return preparePackageBootstrap(ENTRA_BOOTSTRAP, options);
 }
@@ -1123,6 +1182,10 @@ export async function verifyEntraBootstrapManifest(manifestPath) {
   return verifyPackageBootstrapManifest(ENTRA_BOOTSTRAP, manifestPath);
 }
 
+export async function verifyAdminBootstrapManifest(manifestPath) {
+  return verifyPackageBootstrapManifest(ADMIN_BOOTSTRAP, manifestPath);
+}
+
 function wait(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
@@ -1253,6 +1316,10 @@ export async function inspectIdentityBootstrapRegistry(options = {}) {
   return inspectPackageBootstrapRegistry(IDENTITY_BOOTSTRAP, options);
 }
 
+export async function inspectAdminBootstrapRegistry(options = {}) {
+  return inspectPackageBootstrapRegistry(ADMIN_BOOTSTRAP, options);
+}
+
 export async function inspectEntraBootstrapRegistry(options = {}) {
   return inspectPackageBootstrapRegistry(ENTRA_BOOTSTRAP, options);
 }
@@ -1358,8 +1425,27 @@ async function main() {
     await inspectEntraBootstrapRegistry(options);
     return;
   }
+  if (command === "admin-bootstrap-check") {
+    const { sourceVersion, version } =
+      await validateAdminBootstrapRepository(options);
+    process.stdout.write(
+      `Admin bootstrap metadata is valid for package ${version} from source ${sourceVersion}.\n`,
+    );
+    return;
+  }
+  if (command === "admin-bootstrap-pack") {
+    const { manifestPath } = await prepareAdminBootstrap(options);
+    process.stdout.write(
+      `Prepared admin bootstrap package at ${manifestPath}.\n`,
+    );
+    return;
+  }
+  if (command === "admin-bootstrap-registry-check") {
+    await inspectAdminBootstrapRegistry(options);
+    return;
+  }
   fail(
-    "usage: release-packages.mjs <check|pack|publish|registry-check|identity-bootstrap-check|identity-bootstrap-pack|identity-bootstrap-registry-check|entra-bootstrap-check|entra-bootstrap-pack|entra-bootstrap-registry-check> [options]",
+    "usage: release-packages.mjs <check|pack|publish|registry-check|identity-bootstrap-check|identity-bootstrap-pack|identity-bootstrap-registry-check|entra-bootstrap-check|entra-bootstrap-pack|entra-bootstrap-registry-check|admin-bootstrap-check|admin-bootstrap-pack|admin-bootstrap-registry-check> [options]",
   );
 }
 
