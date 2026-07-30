@@ -21,6 +21,7 @@ import {
   isPolicyDigest,
   isPolicyVersion,
   MAX_ACCESS_GRANT_LIFETIME_SECONDS,
+  MAX_COMPACT_ACCESS_GRANT_LENGTH,
   MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS,
   parseStrictJson,
   policyPair,
@@ -97,6 +98,11 @@ interface ParsedGrant {
 function parseCompactGrant(compact: string): ParsedGrant {
   if (typeof compact !== "string") {
     fail("access grant must be compact JWS text");
+  }
+  // Bound the work before any decoding or parsing, so an oversized input costs
+  // a length check rather than base64url decoding and a JSON walk.
+  if (compact.length > MAX_COMPACT_ACCESS_GRANT_LENGTH) {
+    fail("access grant exceeds the accepted compact size");
   }
   const segments = compact.split(".");
   if (

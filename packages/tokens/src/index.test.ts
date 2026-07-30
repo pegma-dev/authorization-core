@@ -859,6 +859,47 @@ describe("@pegma/authorization-tokens verifier", () => {
     );
   });
 
+  it("refuses an oversized compact grant before decoding or fetching keys", async () => {
+    const compact = await issue();
+    const body = await jwksBody();
+    let fetches = 0;
+    const configured = verifier(body, {
+      fetch: async () => {
+        fetches += 1;
+        return {
+          body,
+          finalUrl: "https://authorization.example.test/.well-known/jwks.json",
+        };
+      },
+    });
+    const [encodedHeader, encodedPayload, signature] = compact.split(".");
+
+    // Padding the payload keeps the shape valid, so only the length bound can
+    // reject it. Nothing is decoded and no key is fetched.
+    const oversized = `${encodedHeader}.${encodedPayload}${"A".repeat(8_192)}.${signature}`;
+    expect(oversized.length).toBeGreaterThan(8_192);
+    await expect(configured.verifyAndConsume(oversized)).rejects.toThrow(
+      "access grant rejected",
+    );
+    expect(fetches).toBe(0);
+
+    // Deep nesting cannot reach the recursive strict JSON parser either.
+    const nested = Buffer.from(
+      `${"[".repeat(4_200)}${"]".repeat(4_200)}`,
+    ).toString("base64url");
+    await expect(
+      configured.verifyAndConsume(`${encodedHeader}.${nested}.${signature}`),
+    ).rejects.toThrow("access grant rejected");
+    expect(fetches).toBe(0);
+
+    // The grant this issuer actually mints is far inside the bound.
+    expect(compact.length).toBeLessThan(8_192);
+    await expect(configured.verifyAndConsume(compact)).resolves.toMatchObject({
+      principalId: "principal-001",
+    });
+    expect(fetches).toBe(1);
+  });
+
   it("enforces exact issuer, application, audience, policy, permission, and zero-leeway time", async () => {
     const compact = await issue();
     const body = await jwksBody();
@@ -1264,6 +1305,48 @@ describe("@pegma/authorization-tokens JWKS", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("bounds the production JWKS fetch by deadline and response size", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      let observedSignal: AbortSignal | undefined;
+      globalThis.fetch = (async (_url, init) => {
+        observedSignal = (init as RequestInit).signal ?? undefined;
+        // Far larger than any V1 JWKS, streamed rather than buffered whole.
+        return new Response("[".repeat(70_000), { status: 200 });
+      }) as typeof fetch;
+
+      await expect(
+        defaultJwksFetcher("https://authorization.example.test/jwks.json"),
+      ).rejects.toThrow("exceeds the accepted size");
+      expect(observedSignal).toBeInstanceOf(AbortSignal);
+      expect(observedSignal?.aborted).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("abandons a JWKS fetch that outlives its deadline", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (_url, init) => {
+        const signal = (init as RequestInit).signal;
+        // Never settles on its own, so only the deadline can end it.
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            reject(signal.reason as Error);
+          });
+        });
+      }) as typeof fetch;
+
+      const pending = defaultJwksFetcher(
+        "https://authorization.example.test/jwks.json",
+      );
+      await expect(pending).rejects.toThrow(/abort|timed out/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, 10_000);
 
   it("denies an in-flight JWKS refresh after terminal monotonic regression", async () => {
     let release!: () => void;

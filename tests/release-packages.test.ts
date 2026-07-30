@@ -62,7 +62,7 @@ describe("release package metadata", () => {
 
   it("validates the repository, package manifests, and lockfile together", async () => {
     await expect(validateRepository()).resolves.toMatchObject({
-      version: "0.1.2",
+      version: "0.1.3",
     });
   });
 
@@ -87,7 +87,7 @@ describe("release package metadata", () => {
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
       await expect(validateIdentityBootstrapRepository()).rejects.toThrow(
-        "identity bootstrap source requires root 0.1.0, found 0.1.2",
+        "identity bootstrap source requires root 0.1.0, found 0.1.3",
       );
     } finally {
       for (const [key, value] of releaseEnvironment) {
@@ -96,7 +96,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateIdentityBootstrapRepository({ releaseTag: "v0.1.2" }),
+      validateIdentityBootstrapRepository({ releaseTag: "v0.1.3" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -163,12 +163,12 @@ describe("release package metadata", () => {
   });
 
   it("requires a stable release tag that exactly matches the common version", async () => {
-    await expect(validateRepository({ releaseTag: "v0.1.3" })).rejects.toThrow(
-      "release tag must be v0.1.2",
+    await expect(validateRepository({ releaseTag: "v0.1.4" })).rejects.toThrow(
+      "release tag must be v0.1.3",
     );
     await expect(
       validateRepository({
-        releaseTag: "v0.1.2",
+        releaseTag: "v0.1.3",
         releasePrerelease: true,
       }),
     ).rejects.toThrow("prereleases cannot publish packages");

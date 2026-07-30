@@ -154,10 +154,12 @@ const MAX_STRIPE_STATE_AGE_MS = 15 * 60 * 1_000;
 const ROLE_AUTHORIZATION_LIFETIME_MS = 60_000;
 const MODULE_PERMISSION = "support.module.call";
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
+const MAX_REQUEST_BODY_BYTES = 16 * 1_024;
 const HOST_TEXT_PATTERN = /^[^\u0000-\u001F\u007F]{1,200}$/;
 
 class AdministrativeCommandValidationError extends Error {}
 class AdministrativeIdempotencyConflictError extends Error {}
+class RequestBodyTooLargeError extends Error {}
 
 /**
  * Canonicalize the JSON data model with lexicographically sorted object keys.
@@ -248,11 +250,35 @@ const writeJson = (
   response.end(JSON.stringify(value));
 };
 
+/**
+ * Read a JSON request body, refusing one larger than an administrative command
+ * can legitimately be.
+ *
+ * An administrative command is a handful of short identifiers, so the cap is
+ * generous. It is here because examples are the most-copied code in any
+ * repository: without it, an unauthenticated caller can stream an unbounded
+ * body and exhaust the process's memory before any authorization runs.
+ */
 const readJson = async (
   request: IncomingMessage,
 ): Promise<Record<string, unknown>> => {
   const chunks: Uint8Array[] = [];
-  for await (const chunk of request) chunks.push(chunk);
+  let total = 0;
+  let oversized = false;
+  for await (const chunk of request) {
+    total += chunk.byteLength;
+    if (total > MAX_REQUEST_BODY_BYTES) {
+      // Stop retaining bytes, but keep draining so the response can still be
+      // written on this connection instead of the peer seeing a reset.
+      oversized = true;
+      chunks.length = 0;
+      continue;
+    }
+    chunks.push(chunk);
+  }
+  if (oversized) {
+    throw new RequestBodyTooLargeError("request body is too large");
+  }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 };
@@ -1130,6 +1156,10 @@ export async function createReferenceIntegration(
       }
       writeJson(response, 404, { error: "not_found" });
     } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        writeJson(response, 413, { error: "request_too_large" });
+        return;
+      }
       if (
         error instanceof AdministrativeCommandValidationError ||
         error instanceof SyntaxError
