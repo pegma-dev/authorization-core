@@ -8,7 +8,7 @@ OIDC with provenance on 2026-07-27; synchronized `v0.1.2` corrects the
 pre-publish `v0.1.1` release-test failure and first advertises Identity as the
 eighth package; synchronized `v0.1.3` resolves the 2026-07-29 security review;
 synchronized `v0.1.4` first advertises Entra as the ninth package; synchronized
-`0.2.0` is prepared, aligning `@pegma/storage-core` at `0.4.0` across the
+`v0.2.0` is prepared, aligning `@pegma/storage-core` at `0.4.0` across the
 stack; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
