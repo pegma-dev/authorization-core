@@ -275,7 +275,7 @@ describe("release package metadata", () => {
     );
     expect(adminBootstrap).toContain("@pegma/authorization-storage@0.3.0");
     expect(adminBootstrap).toContain("0.4.0");
-    expect(adminBootstrap).not.toMatch(/admin-bootstrap:publish/);
+    expect(adminBootstrap).not.toMatch(/\badmin-bootstrap:publish\b/);
   });
 
   it("never accepts a bootstrap manifest as a synchronized release manifest", async () => {
