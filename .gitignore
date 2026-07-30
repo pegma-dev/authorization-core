@@ -3,7 +3,8 @@ dist/
 coverage/
 .release*/
 .identity-bootstrap*/
-.entra-bootstrap*/
+.entra-bootstrap
+.admin-bootstrap*/
 *.tsbuildinfo
 
 .env
