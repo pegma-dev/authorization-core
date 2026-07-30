@@ -195,6 +195,9 @@ describe("release package metadata", () => {
       ?.split("## First advertised release and later releases")[0];
     expect(entraBootstrap).toBeDefined();
     expect(entraBootstrap).toContain("authorization-entra-v0.0.0");
+    expect(entraBootstrap).toMatch(
+      /git fetch origin\r?\ngit fetch origin tag authorization-entra-v0\.0\.0/u,
+    );
     expect(entraBootstrap).toContain("npm run entra-bootstrap:check");
     expect(entraBootstrap).toContain(
       "npm publish .entra-bootstrap/pegma-authorization-entra-0.0.0.tgz",
