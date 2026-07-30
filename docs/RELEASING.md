@@ -294,6 +294,76 @@ packages. Confirm `latest` is `0.1.4`, `bootstrap` remains `0.0.0`, and both
 registry integrities match. Do not create a GitHub release for the package-name
 reservation itself.
 
+## Bootstrap for the new Admin package
+
+`@pegma/authorization-admin` is the tenth package and was not part of any
+completed bootstrap ceremony. Before it joins an advertised synchronized
+release, it needs the same one-time name reservation and trusted-publisher
+configuration. This does not reopen or alter any completed ceremony.
+
+The audited bootstrap source stays internally consistent: root and all ten
+source packages use common version `0.3.0`, and the new package keeps its
+exact `@pegma/authorization-contracts@0.3.0` and
+`@pegma/authorization-storage@0.3.0` dependencies — the first bootstrap
+with two dependencies, both already published, so the clean consumer
+install resolves them from the registry. The dedicated package-only gate
+stages only the new package with publish version `0.0.0`.
+
+Create the protected signed annotated `authorization-admin-v0.0.0` tag
+once, targeting the merged `main` commit that carries this bootstrap
+tooling; record the exact target commit here when the ceremony completes.
+If verification of an existing tag fails, stop: do not recreate, move, or
+force the tag.
+
+The first fetch is not optional. `--require-main-ancestor` asks whether the
+checked-out commit is an ancestor of `origin/main`, so a tag-only fetch
+would leave a stale remote-tracking branch and reject a valid new tag.
+
+```sh
+git fetch origin
+git fetch origin tag authorization-admin-v0.0.0
+git verify-tag authorization-admin-v0.0.0
+git switch --detach authorization-admin-v0.0.0
+npm ci
+npm run format:check
+npm run check
+npm test
+npm run admin-bootstrap:check
+npm run admin-bootstrap:pack -- -- --require-clean --require-main-ancestor --output .admin-bootstrap
+npm run admin-bootstrap:registry:check -- -- --manifest .admin-bootstrap/admin-bootstrap-manifest.json
+```
+
+Run the normal gate and the package-only gate on Node 22 and 24. The
+bootstrap tool verifies common-version source metadata and lockfile state,
+the exact declared dependencies, package-local `prepack`, allowlisted
+files, inline-source maps, dependency-free portable ESM import, a clean
+consumer install, production dependency audit, tarball hashes, and npm
+registry integrity. Its manifest has a bootstrap-only schema and exactly
+one package. There is deliberately no bootstrap publish command, the tool
+refuses release/OIDC authority, and the stable OIDC publisher rejects its
+manifest.
+
+Publish only the prepared tarball manually:
+
+```sh
+npm publish .admin-bootstrap/pegma-authorization-admin-0.0.0.tgz --access public --tag bootstrap
+```
+
+For a package's first-ever publication, npm forces `latest` to the first
+version even when `--tag bootstrap` was requested. An immediate attempt to
+remove that only `latest` tag can fail with HTTP 400. Do not unpublish,
+retry with different bytes, or treat tag removal as a bootstrap
+prerequisite. Verify the `0.0.0` integrity, ensure the `bootstrap` tag
+points to it, and configure the same `publish.yml` / `npm-publish` trusted
+publisher described above.
+
+Keep the unavoidable `latest=0.0.0` window as short as operationally
+possible. The next synchronized release (`0.4.0`) then moves the new
+package's `latest` tag while publishing the synchronized version of the
+nine existing packages. Confirm `latest` is the synchronized version,
+`bootstrap` remains `0.0.0`, and both registry integrities match. Do not
+create a GitHub release for the package-name reservation itself.
+
 ## First advertised release and later releases
 
 The first advertised release completed on 2026-07-27. The protected signed

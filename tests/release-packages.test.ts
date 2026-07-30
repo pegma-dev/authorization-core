@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_BOOTSTRAP_PACKAGE,
   ENTRA_BOOTSTRAP_PACKAGE,
   IDENTITY_BOOTSTRAP_PACKAGE,
   RELEASE_PACKAGES,
   decidePublication,
   parseArguments,
   releaseImportSpecifiers,
+  validateAdminBootstrapRepository,
   validateEntraBootstrapRepository,
   validateIdentityBootstrapRepository,
   validateReleaseTag,
@@ -205,6 +207,75 @@ describe("release package metadata", () => {
     );
     expect(entraBootstrap).toContain("0.1.4");
     expect(entraBootstrap).not.toMatch(/\bentra-bootstrap:publish\b/);
+  });
+
+  it("keeps the admin name-reservation bootstrap package-only and version-split", async () => {
+    expect(ADMIN_BOOTSTRAP_PACKAGE).toEqual({
+      directory: "admin",
+      name: "@pegma/authorization-admin",
+      sourceVersion: "0.3.0",
+      version: "0.0.0",
+    });
+    const releaseEnvironmentKeys = [
+      "RELEASE_TAG",
+      "RELEASE_COMMIT",
+      "RELEASE_PRERELEASE",
+      "GITHUB_EVENT_NAME",
+      "ACTIONS_ID_TOKEN_REQUEST_URL",
+      "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    ] as const;
+    const releaseEnvironment = new Map(
+      releaseEnvironmentKeys.map((key) => [key, process.env[key]]),
+    );
+    try {
+      for (const key of releaseEnvironmentKeys) delete process.env[key];
+      // The admin bootstrap source IS the current 0.3.0 tree.
+      await expect(validateAdminBootstrapRepository()).resolves.toMatchObject({
+        sourceVersion: "0.3.0",
+        version: "0.0.0",
+      });
+    } finally {
+      for (const [key, value] of releaseEnvironment) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+    await expect(
+      validateAdminBootstrapRepository({ releaseTag: "v0.3.0" }),
+    ).rejects.toThrow("refuses release or OIDC authority");
+
+    const rootManifest = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(rootManifest.scripts["admin-bootstrap:pack"]).toContain(
+      "admin-bootstrap-pack",
+    );
+    expect(rootManifest.scripts["admin-bootstrap:registry:check"]).toContain(
+      "admin-bootstrap-registry-check",
+    );
+    expect(rootManifest.scripts["admin-bootstrap:publish"]).toBeUndefined();
+  });
+
+  it("documents the Admin bootstrap ceremony without a publish command", () => {
+    const releaseGuide = readFileSync(
+      join(process.cwd(), "docs", "RELEASING.md"),
+      "utf8",
+    );
+    const adminBootstrap = releaseGuide
+      .split("## Bootstrap for the new Admin package")[1]
+      ?.split("## First advertised release and later releases")[0];
+    expect(adminBootstrap).toBeDefined();
+    expect(adminBootstrap).toContain("authorization-admin-v0.0.0");
+    expect(adminBootstrap).toMatch(
+      /git fetch origin\r?\ngit fetch origin tag authorization-admin-v0\.0\.0/u,
+    );
+    expect(adminBootstrap).toContain("npm run admin-bootstrap:check");
+    expect(adminBootstrap).toContain(
+      "npm publish .admin-bootstrap/pegma-authorization-admin-0.0.0.tgz",
+    );
+    expect(adminBootstrap).toContain("@pegma/authorization-storage@0.3.0");
+    expect(adminBootstrap).toContain("0.4.0");
+    expect(adminBootstrap).not.toMatch(/admin-bootstrap:publish/);
   });
 
   it("never accepts a bootstrap manifest as a synchronized release manifest", async () => {

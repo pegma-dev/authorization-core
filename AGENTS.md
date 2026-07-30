@@ -84,6 +84,14 @@ reservation is published under `bootstrap` from merge commit
 `b609f709fecbcc0507b7021e7177d488f0aad574`, and the synchronized `0.1.4`
 release is its first advertised stable publication.
 
+`@pegma/authorization-admin` is the tenth package, the role-administration
+service extracted from the two reference hosts (docs/ADMINISTRATION.md). It
+is implemented and released-inventory-wired but NOT yet reserved or
+published: its `admin-bootstrap:*` package-only gate exists, and the
+one-time `authorization-admin-v0.0.0` reservation plus trusted-publisher
+configuration must complete (docs/RELEASING.md) before the next
+synchronized release advertises it.
+
 ## Where things stand
 
 Foundation and Phases 1 through 5 are complete, including signed access grants,
