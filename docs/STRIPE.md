@@ -181,9 +181,63 @@ schema migration, and operational behavior. An in-memory fixture can test the
 contract but does not satisfy the production durability obligation.
 
 `createStripeEntitlementTranslator` remains the lower-level primitive for
-trusted webhook ingestion or reconciliation pipelines. Using it to accept
-transient provider facts directly during an authorization request bypasses the
-supported adapter boundary.
+trusted webhook ingestion or reconciliation pipelines and for the
+webhook-ledger composition below. Using it to accept transient provider facts
+directly during an authorization request — facts carried by the request rather
+than read from trusted durable state — bypasses the supported boundaries.
+
+## Webhook-maintained ledgers
+
+The full adapter's freshness contract assumes the host periodically
+re-confirms facts against Stripe and advances `refreshedAtEpochMs`. A host
+whose durable subscription ledger is maintained purely by verified webhooks
+has no such cadence: no news means no change, and a subscription last
+confirmed weeks ago is still exactly correct. For that host no value of
+`maximumStateAgeMs` is honest — a small bound manufactures staleness
+rejections of valid grants, and a huge bound demands a confirmation time the
+host has no truthful way to advance.
+
+The supported composition for such hosts is the pure translator over the
+host's own lifecycle policy: derive the granting facts from the durable
+webhook ledger at request time, then apply `createStripeEntitlementTranslator`
+to those facts. This is first-class, not a workaround — deriving which
+lifecycle statuses grant remains host policy under the adapter contract
+either way, and the translator is the same compiled exact-ID rule set the full
+adapter applies.
+
+What the host takes on by choosing it is exactly what the wall-clock bound
+otherwise enforces (security requirement 8 in the project plan: cancellation
+must take effect predictably):
+
+1. the ledger read at authorization time must be from trusted durable state,
+   fail closed when missing or unavailable, and never fall back to
+   last-known-good;
+2. webhook pipeline health becomes the freshness guarantee, and it must stay
+   fail-closed rather than alert-only. A silently dead endpoint no longer ages
+   grants out, and monitoring by itself leaves paid access open until a human
+   responds. The host must therefore confirm pipeline health on a bounded
+   cadence — for example a periodic job that verifies the endpoint's
+   registration and recent event flow against Stripe and advances a single
+   durable pipeline-health confirmation time — and the authorization-time read
+   must reject when that confirmation exceeds the host's chosen and documented
+   bound. This is the same enforced-staleness obligation the full adapter's
+   `maximumStateAgeMs` implements (security requirement 8 in the project
+   plan), moved from per-principal facts — where a webhook ledger has no
+   honest confirmation time — to the pipeline whose silence is the actual
+   risk. A dead pipeline then denies predictably instead of granting
+   indefinitely;
+3. event ordering and supersession decide correctness: a fact must never be
+   overwritten by an older event. Stripe does not deliver a total order across
+   independently changing objects, so ordering is tracked per independently
+   superseded object — for example per subscription — never as one
+   per-customer watermark, which would discard an older but still-necessary
+   event for a different object, including a cancellation. Alternatively the
+   writer re-fetches authoritative complete state after each event and
+   persists that, making delivery order irrelevant.
+
+Hosts that do run periodic reconciliation against Stripe should prefer the
+full adapter: its enforced bound is then honest and turns a broken pipeline
+into predictable expiry instead of an alert dependency.
 
 ## Host-owned trust and lifecycle
 
@@ -201,9 +255,10 @@ Before translation, the host remains responsible for:
    provider-confirmation time transactionally;
 7. reconciling persisted state against Stripe and refreshing the confirmation
    time only after a complete successful provider read;
-8. loading trusted active facts through the principal-keyed persisted-state
-   adapter at authorization time with a chosen and documented numeric maximum
-   state age;
+8. loading trusted active facts at authorization time — through the
+   principal-keyed persisted-state adapter with a chosen and documented
+   numeric maximum state age, or through the webhook-ledger composition
+   above;
 9. loading roles separately and applying application-owned permission policy.
 
 The `entitlements.active_entitlement_summary.updated` webhook summary contains

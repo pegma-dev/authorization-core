@@ -182,6 +182,29 @@ export type GrantRoleAssignmentResult =
     }>;
 ```
 
+## IdentityLinkStore
+
+**Kind:** interface
+
+Durable identity-link persistence.
+
+`linkIdentity` atomically claims one exact, case-sensitive issuer-and-subject
+tuple for one host principal. The first write for a tuple is `linked`; a
+replay carrying the same principal is `unchanged`; a write whose tuple is
+already linked to a different principal is a `conflict`, because each tuple
+links to at most one principal while one principal may hold many tuples.
+
+Successful results return the stored link, so a caller always reads back
+what is actually persisted. Links have no unlink or relink operation on this
+surface; moving a tuple between principals is a host administrative decision
+outside this port.
+
+```ts
+export interface IdentityLinkStore extends PrincipalLookupStore {
+  readonly linkIdentity: (link: IdentityLink) => Promise<LinkIdentityResult>;
+}
+```
+
 ## InMemoryStorageAdapter
 
 **Kind:** interface
@@ -194,7 +217,7 @@ every mutation preserves the combined lifecycle-and-audit invariant.
 ```ts
 export interface InMemoryStorageAdapter
   extends
-    PrincipalLookupStore,
+    IdentityLinkStore,
     RoleAssignmentReader,
     RoleAssignmentAuditReader,
     AuditedRoleAssignmentMutationStore {}
@@ -210,6 +233,24 @@ Optional read-only identity-link seeds for one in-memory instance.
 export interface InMemoryStorageAdapterOptions {
   readonly identityLinks?: readonly IdentityLink[];
 }
+```
+
+## LinkIdentityResult
+
+**Kind:** type
+
+Result of atomically attempting to persist one durable identity link.
+
+```ts
+export type LinkIdentityResult =
+  | Readonly<{
+      readonly status: "linked" | "unchanged";
+      readonly link: IdentityLink;
+    }>
+  | Readonly<{
+      readonly status: "conflict";
+      readonly reason: "principal";
+    }>;
 ```
 
 ## PrincipalLookupStore
@@ -371,6 +412,20 @@ export interface RoleAssignmentReader {
     principalId: PrincipalId,
     scope: RoleAssignmentScope,
   ) => Promise<readonly ActiveRoleAssignment[]>;
+  /**
+   * Complete exact-principal and exact-scope lifecycle selection.
+   *
+   * Returns every assignment the principal has ever held in the scope — active
+   * and revoked alike — with grant and revocation evidence intact, ordered by
+   * `grantedAtEpochMs` ascending and then by assignment ID code-unit order.
+   *
+   * An empty array means definitive emptiness. Implementations reject partial,
+   * operationally failed, or corrupt results.
+   */
+  readonly listRoleAssignments: (
+    principalId: PrincipalId,
+    scope: RoleAssignmentScope,
+  ) => Promise<readonly RoleAssignment[]>;
 }
 ```
 

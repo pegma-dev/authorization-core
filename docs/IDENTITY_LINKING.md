@@ -1,8 +1,9 @@
 # Identity linking
 
 This guide defines how Authorization Core relates a provider identity to a stable,
-host-owned principal. It is the normative identity-linking model; it does not
-define a storage or mutation API.
+host-owned principal. It is the normative identity-linking model; the storage
+surface that implements lookup and link creation is defined in
+[Storage ports](STORAGE.md).
 
 ## Resolution
 
@@ -33,6 +34,17 @@ Every link attempt and outcome must be auditable, including the acting
 principal or trusted operator, the affected key and principal, the result, and
 the host's approved reason or correlation data. Sensitive token material must
 not enter the audit record.
+
+`@pegma/authorization-storage` exposes this operation as
+`IdentityLinkStore.linkIdentity`: an identical replay is `unchanged`, and an
+already-linked key attaching to a different principal is a fail-closed
+`conflict` that leaves the existing edge untouched. Control-of-identity
+evidence, caller authorization, and the audit record remain host obligations
+around that call. The idempotent replay is what makes the audit obligation
+satisfiable without a combined command: record the audit intent durably before
+the write, complete it from the returned outcome, and recover a crash between
+the two by replaying the write and completing the pending record. See
+[Storage ports](STORAGE.md).
 
 ## Unlinking
 
@@ -73,10 +85,9 @@ data migrations.
 
 This model intentionally does not yet define:
 
-- storage ports or a storage representation;
-- transaction or compare-and-swap mechanisms;
-- runtime link, unlink, or merge APIs and their error unions;
-- an audit event schema;
+- runtime unlink or merge APIs and their error unions (the link write is
+  `IdentityLinkStore.linkIdentity` in `@pegma/authorization-storage`);
+- an identity-link audit event schema;
 - provider token verification, SDK integration, or full identity-adapter
   implementations;
 - account-status or tombstone types;

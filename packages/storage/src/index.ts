@@ -22,6 +22,35 @@ import type {
  */
 export interface PrincipalLookupStore extends IdentityAdapter<IdentityLinkKey> {}
 
+/** Result of atomically attempting to persist one durable identity link. */
+export type LinkIdentityResult =
+  | Readonly<{
+      readonly status: "linked" | "unchanged";
+      readonly link: IdentityLink;
+    }>
+  | Readonly<{
+      readonly status: "conflict";
+      readonly reason: "principal";
+    }>;
+
+/**
+ * Durable identity-link persistence.
+ *
+ * `linkIdentity` atomically claims one exact, case-sensitive issuer-and-subject
+ * tuple for one host principal. The first write for a tuple is `linked`; a
+ * replay carrying the same principal is `unchanged`; a write whose tuple is
+ * already linked to a different principal is a `conflict`, because each tuple
+ * links to at most one principal while one principal may hold many tuples.
+ *
+ * Successful results return the stored link, so a caller always reads back
+ * what is actually persisted. Links have no unlink or relink operation on this
+ * surface; moving a tuple between principals is a host administrative decision
+ * outside this port.
+ */
+export interface IdentityLinkStore extends PrincipalLookupStore {
+  readonly linkIdentity: (link: IdentityLink) => Promise<LinkIdentityResult>;
+}
+
 /** Opaque record-scoped optimistic-concurrency token. */
 export type RoleAssignmentConcurrencyToken = string;
 
@@ -50,6 +79,21 @@ export interface RoleAssignmentReader {
     principalId: PrincipalId,
     scope: RoleAssignmentScope,
   ) => Promise<readonly ActiveRoleAssignment[]>;
+
+  /**
+   * Complete exact-principal and exact-scope lifecycle selection.
+   *
+   * Returns every assignment the principal has ever held in the scope — active
+   * and revoked alike — with grant and revocation evidence intact, ordered by
+   * `grantedAtEpochMs` ascending and then by assignment ID code-unit order.
+   *
+   * An empty array means definitive emptiness. Implementations reject partial,
+   * operationally failed, or corrupt results.
+   */
+  readonly listRoleAssignments: (
+    principalId: PrincipalId,
+    scope: RoleAssignmentScope,
+  ) => Promise<readonly RoleAssignment[]>;
 }
 
 /** Result of atomically attempting to create one active assignment. */
@@ -262,7 +306,7 @@ export interface InMemoryStorageAdapterOptions {
  */
 export interface InMemoryStorageAdapter
   extends
-    PrincipalLookupStore,
+    IdentityLinkStore,
     RoleAssignmentReader,
     RoleAssignmentAuditReader,
     AuditedRoleAssignmentMutationStore {}
