@@ -9,6 +9,30 @@ export const MAX_SOURCE_AUTHORIZATION_LIFETIME_MS = 60_000;
 export const MAX_JWKS_CACHE_AGE_MS = 60_000;
 export const UNKNOWN_KID_REFRESH_INTERVAL_MS = 5_000;
 
+/**
+ * Deadline and size bound for the production JWKS fetcher.
+ *
+ * One refresh is serialized for every verifier sharing an issuer and endpoint,
+ * so a hung or unbounded response degrades all of them. A V1 JWKS holds a small
+ * number of fixed-size P-256 keys, so 64 KiB is generous, and the deadline is
+ * well inside the cache age it refreshes.
+ */
+export const JWKS_FETCH_TIMEOUT_MS = 5_000;
+export const MAX_JWKS_RESPONSE_BYTES = 65_536;
+
+/**
+ * Largest compact grant the profile accepts, in UTF-16 code units.
+ *
+ * A grant carries one principal, one audience, and one permission set, so a
+ * realistic V1 grant is a few hundred bytes and even a very large permission
+ * set stays far below this. The bound exists so that an unauthenticated caller
+ * cannot make the verifier decode base64url and walk the strict JSON parser
+ * over an arbitrarily large input before the input is rejected. The issuer
+ * holds itself to the same bound, so it can never mint a grant that this
+ * verifier would refuse for its size.
+ */
+export const MAX_COMPACT_ACCESS_GRANT_LENGTH = 8_192;
+
 export const HEADER_FIELDS = ["alg", "kid", "typ"] as const;
 export const CLAIM_FIELDS = [
   "iss",

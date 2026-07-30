@@ -515,6 +515,107 @@ describe("audited grant", () => {
     ).resolves.toHaveLength(1);
   });
 
+  it("refuses one assignment ID reused in a second partition", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const first = await requireGrant(
+      adapter,
+      activeAssignment("shared-id"),
+      "first_event",
+    );
+
+    // The tuple guard lives in the principal-and-scope partition, so it cannot
+    // see an ID already spent by another principal. Only the pointer can.
+    await expect(
+      grant(
+        adapter,
+        activeAssignment("shared-id", {
+          principalId: "principal_beta",
+          role: "billing",
+        }),
+        "second_event",
+      ),
+    ).resolves.toEqual({ status: "conflict", reason: "assignment_id" });
+
+    await expect(
+      adapter.listActiveRoleAssignments("principal_beta", applicationScope),
+    ).resolves.toEqual([]);
+    await expect(
+      adapter.listRoleAssignmentAuditEvents("shared-id"),
+    ).resolves.toHaveLength(1);
+
+    // The one lifecycle the ID does own stays readable and revocable by it.
+    const revoked = await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "shared-id",
+      expectedConcurrencyToken: first.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "shared_revoke",
+    });
+    expect(revoked.status).toBe("revoked");
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toEqual([]);
+    await expect(
+      adapter.listActiveRoleAssignments("principal_beta", applicationScope),
+    ).resolves.toEqual([]);
+  });
+
+  it("keeps an assignment ID spent once a grant using it is refused", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, activeAssignment("holder"), "holder_event");
+
+    // Refused for the occupied tuple, but its pointer is already durable.
+    await expect(
+      grant(adapter, activeAssignment("spent"), "spent_event"),
+    ).resolves.toEqual({ status: "conflict", reason: "active_tuple" });
+
+    await expect(
+      grant(
+        adapter,
+        activeAssignment("spent", {
+          principalId: "principal_beta",
+          role: "billing",
+        }),
+        "reuse_event",
+      ),
+    ).resolves.toEqual({ status: "conflict", reason: "assignment_id" });
+    await expect(
+      adapter.listActiveRoleAssignments("principal_beta", applicationScope),
+    ).resolves.toEqual([]);
+    await expect(adapter.getRoleAssignment("spent")).resolves.toBeNull();
+  });
+
+  it("permits retrying a refused grant unchanged once its tuple is free", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const holder = await requireGrant(
+      adapter,
+      activeAssignment("holder"),
+      "holder_event",
+    );
+    await expect(
+      grant(adapter, activeAssignment("waiting"), "waiting_event"),
+    ).resolves.toEqual({ status: "conflict", reason: "active_tuple" });
+    await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: "holder",
+      expectedConcurrencyToken: holder.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs: 1_700_000_000_001,
+      auditEventId: "holder_revoke",
+    });
+
+    // The pointer written by the refused attempt describes this exact grant, so
+    // the retry is the same operation rather than a reused ID.
+    const retried = await grant(
+      adapter,
+      activeAssignment("waiting"),
+      "waiting_event",
+    );
+    expect(retried.status).toBe("granted");
+    await expect(
+      adapter.listActiveRoleAssignments("principal_alpha", applicationScope),
+    ).resolves.toMatchObject([{ id: "waiting" }]);
+  });
+
   it("keeps different scopes and principals in independent tuples", async () => {
     const adapter = createInMemoryStorageAdapter();
     await requireGrant(adapter, activeAssignment("application-scope"));

@@ -17,6 +17,7 @@ import {
   isPolicyDigest,
   isPolicyVersion,
   MAX_ACCESS_GRANT_LIFETIME_SECONDS,
+  MAX_COMPACT_ACCESS_GRANT_LENGTH,
   MAX_NEGATIVE_VERIFIER_OFFSET_SECONDS,
   MAX_SOURCE_AUTHORIZATION_LIFETIME_MS,
   policyPair,
@@ -389,6 +390,12 @@ export function createAccessGrantIssuerInternal<ReadRequest>(
           typ: ACCESS_GRANT_TYPE,
         })
         .sign(signingKey);
+      if (compact.length > MAX_COMPACT_ACCESS_GRANT_LENGTH) {
+        // Refuse here rather than mint a grant every verifier would reject for
+        // its size. Reaching this bound means the configured identities or
+        // permission set are far larger than the profile contemplates.
+        fail("access grant exceeds the accepted compact size");
+      }
       const postSignWindow = readGrantWindow(source);
       if (postSignWindow.iat >= exp) {
         fail("access grant expired before issuance completed");

@@ -1,6 +1,6 @@
 {
   "name": "authorization-core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Provider-neutral roles, entitlements, and permissions for SaaS applications.",
   "license": "MIT",

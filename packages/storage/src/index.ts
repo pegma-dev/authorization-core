@@ -232,6 +232,13 @@ export type AuditedRevokeRoleAssignmentResult =
  * Audit payloads are derived from the role lifecycle; callers supply only an
  * exact event ID. An unchanged revoke replay matches the completed event ID
  * and revocation evidence; the opaque pre-revocation token is not retained.
+ *
+ * An unchanged grant replay attests to the assignment ID, its principal, scope,
+ * and role, and the grant event ID — not to the whole command. A replay whose
+ * principal, scope, or role differs is a reused assignment ID and conflicts;
+ * one that differs only in `grantedBy` or `grantedAtEpochMs` is unchanged, and
+ * the returned record is the stored assignment rather than the command's, so a
+ * caller always reads back what is actually persisted.
  */
 export interface AuditedRoleAssignmentMutationStore {
   readonly grantRoleAssignmentWithAudit: (

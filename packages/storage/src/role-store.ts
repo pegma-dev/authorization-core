@@ -8,6 +8,7 @@ import type {
   RoleAssignmentActor,
   RoleAssignmentId,
   RoleAssignmentScope,
+  RoleName,
 } from "@pegma/authorization-contracts";
 import {
   createMemoryStore,
@@ -31,6 +32,7 @@ import {
   type AuthorizationRecord,
   type RecordLocation,
   type StoredAssignment,
+  type StoredAssignmentPointer,
   type StoredAudit,
   type StoredTuple,
 } from "./collections.js";
@@ -135,6 +137,36 @@ const freezeAuditRecord = (
   Object.freeze(record.event);
   return Object.freeze(record);
 };
+
+const scopesEqual = (
+  left: RoleAssignmentScope,
+  right: RoleAssignmentScope,
+): boolean =>
+  left.kind === "application"
+    ? right.kind === "application"
+    : right.kind === "organization" &&
+      left.organizationId === right.organizationId;
+
+/**
+ * Whether an existing pointer describes something other than this grant.
+ *
+ * A pointer is immutable and an assignment id is single-use, so a pointer that
+ * is already present must describe exactly the grant being attempted. Anything
+ * else means the id is already spoken for: either by a live assignment in a
+ * different partition, or by an earlier attempt that was refused after its
+ * pointer had been written. Both cases must be refused, because `locate` can
+ * only ever resolve an id through its first pointer — a second lifecycle under
+ * one id would be active yet unreadable and unrevocable by that id.
+ */
+const pointsElsewhere = (
+  pointer: StoredAssignmentPointer,
+  location: RecordLocation,
+  role: RoleName,
+): boolean =>
+  pointer.applicationId !== location.applicationId ||
+  pointer.principalId !== location.principalId ||
+  !scopesEqual(pointer.scope, location.scope) ||
+  pointer.role !== role;
 
 const actorsEqual = (
   left: RoleAssignmentActor,
@@ -377,11 +409,21 @@ export const createRoleStore = (
 
       // Immutable, so it can be written before the lifecycle it points at. A
       // pointer with nothing behind it reads as definitive absence.
-      await pointers.insertIfAbsent({
+      //
+      // The insert result is what enforces the port's unique-assignment-ID
+      // guarantee: the per-partition tuple guard below cannot see an id that
+      // was already used in a different partition.
+      const pointer = await pointers.insertIfAbsent({
         ...location,
         assignmentId: assignment.id,
         role: assignment.role,
       });
+      if (
+        !pointer.inserted &&
+        pointsElsewhere(pointer.value, location, assignment.role)
+      ) {
+        return conflict("assignment_id");
+      }
 
       const guard = await records.getVersioned({
         partition,
