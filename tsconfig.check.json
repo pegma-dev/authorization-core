@@ -13,6 +13,7 @@
       "@pegma/authorization-core/conformance": [
         "./packages/core/src/conformance.ts"
       ],
+      "@pegma/authorization-entra": ["./packages/entra/src/index.ts"],
       "@pegma/authorization-identity": [
         "./packages/identity-link/src/index.ts"
       ],

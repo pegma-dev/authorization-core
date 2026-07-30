@@ -1,6 +1,6 @@
 # Release operations
 
-Authorization Core releases all eight public workspace packages at one common
+Authorization Core releases all nine public workspace packages at one common
 version. No package is published by merging a pull request. Publication is a
 separate operator action after review.
 
@@ -14,8 +14,8 @@ name exists.
 
 The release tool fails before packing unless all of these remain true:
 
-- the public inventory is exactly contracts, Auth0, first-party Identity, core,
-  policy, Stripe, storage, and tokens;
+- the public inventory is exactly contracts, Auth0, Entra, first-party Identity,
+  core, policy, Stripe, storage, and tokens;
 - every root and workspace manifest has one stable semantic version;
 - every internal `@pegma/authorization-*` dependency uses that exact version;
 - the lockfile matches the manifests;
@@ -230,6 +230,67 @@ moves the new package's `latest` tag to `0.1.2` while publishing the
 synchronized version of the seven existing packages. Confirm `latest` is
 `0.1.2`, `bootstrap` remains `0.0.0`, and both registry integrities match. Do
 not create a GitHub release for the package-name reservation itself.
+
+## Bootstrap for the new Entra adapter package
+
+`@pegma/authorization-entra` was not one of the eight names reserved by the
+completed bootstrap ceremonies. Before the package joins an advertised
+synchronized release, it needs the same one-time name reservation and
+trusted-publisher configuration. This does not reopen or alter the completed
+seven-package `v0.0.0` ceremony or the Identity package bootstrap.
+
+The audited bootstrap source stays internally consistent: root and all nine
+source packages use common version `0.1.2`, and the new package keeps its exact
+`@pegma/authorization-contracts@0.1.2` dependency. After the Entra adapter pull
+request merges, create a protected signed annotated
+`authorization-entra-v0.0.0` source tag targeting that exact merge commit.
+Always prepare the name-reservation artifact from that tag, never from a later
+synchronized release branch. The dedicated package-only gate stages only the
+new package with publish version `0.0.0`:
+
+```sh
+git fetch origin tag authorization-entra-v0.0.0
+git verify-tag authorization-entra-v0.0.0
+git switch --detach authorization-entra-v0.0.0
+npm ci
+npm run format:check
+npm run check
+npm test
+npm run entra-bootstrap:check
+npm run entra-bootstrap:pack -- -- --require-clean --require-main-ancestor --output .entra-bootstrap
+npm run entra-bootstrap:registry:check -- -- --manifest .entra-bootstrap/entra-bootstrap-manifest.json
+```
+
+Run the normal gate and the package-only gate on Node 22 and 24. The bootstrap
+tool verifies common-version source metadata and lockfile state, the exact
+single dependency, package-local `prepack`, allowlisted files, inline-source
+maps, dependency-free portable ESM import, a clean consumer install, production
+dependency audit, tarball hashes, and npm registry integrity. Its manifest has
+a bootstrap-only schema and exactly one package. There is deliberately no
+bootstrap publish command, the tool refuses release/OIDC authority, and the
+stable OIDC publisher rejects its manifest.
+
+After verifying the signed annotated `authorization-entra-v0.0.0` source tag,
+publish only the prepared tarball manually:
+
+```sh
+npm publish .entra-bootstrap/pegma-authorization-entra-0.0.0.tgz --access public --tag bootstrap
+```
+
+For a package's first-ever publication, npm forces `latest` to the first
+version even when `--tag bootstrap` was requested. An immediate attempt to
+remove that only `latest` tag can fail with HTTP 400. Do not unpublish, retry
+with different bytes, or treat tag removal as a bootstrap prerequisite.
+Verify the `0.0.0` integrity, ensure the `bootstrap` tag points to it, and
+configure the same `publish.yml` / `npm-publish` trusted publisher described
+above.
+
+Keep the unavoidable `latest=0.0.0` window as short as operationally possible.
+The synchronized `0.1.3` release then moves the new package's `latest` tag to
+`0.1.3` while publishing the synchronized version of the eight existing
+packages. Confirm `latest` is `0.1.3`, `bootstrap` remains `0.0.0`, and both
+registry integrities match. Do not create a GitHub release for the package-name
+reservation itself.
 
 ## First advertised release and later releases
 

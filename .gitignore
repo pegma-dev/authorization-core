@@ -3,6 +3,7 @@ dist/
 coverage/
 .release*/
 .identity-bootstrap*/
+.entra-bootstrap*/
 *.tsbuildinfo
 
 .env

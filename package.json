@@ -29,6 +29,9 @@
     "identity-bootstrap:check": "node scripts/release-packages.mjs identity-bootstrap-check",
     "identity-bootstrap:pack": "node scripts/release-packages.mjs identity-bootstrap-pack",
     "identity-bootstrap:registry:check": "node scripts/release-packages.mjs identity-bootstrap-registry-check",
+    "entra-bootstrap:check": "node scripts/release-packages.mjs entra-bootstrap-check",
+    "entra-bootstrap:pack": "node scripts/release-packages.mjs entra-bootstrap-pack",
+    "entra-bootstrap:registry:check": "node scripts/release-packages.mjs entra-bootstrap-registry-check",
     "test": "npm run build && vitest run"
   },
   "devDependencies": {
