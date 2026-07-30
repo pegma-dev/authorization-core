@@ -6,8 +6,9 @@
 next (the signed `v0.1.0` release published the original seven packages through
 OIDC with provenance on 2026-07-27; synchronized `v0.1.2` corrects the
 pre-publish `v0.1.1` release-test failure and first advertises Identity as the
-eighth package; Entra lands as the ninth package pending its `0.0.0` bootstrap
-and synchronized `0.1.4` release; `0.x` public API remains unstable)
+eighth package; synchronized `v0.1.3` resolves the 2026-07-29 security review;
+synchronized `v0.1.4` first advertises Entra as the ninth package; `0.x` public
+API remains unstable)
 
 **Initial reference application:** RetireGolden
 

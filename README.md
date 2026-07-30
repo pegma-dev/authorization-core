@@ -7,12 +7,11 @@ Provider-neutral roles, entitlements, and permissions for SaaS applications.
 
 > [!IMPORTANT]
 > Authorization Core is in early `0.x` development and its public API is not
-> yet stable. The original seven packages are published at `0.1.0`;
-> `@pegma/authorization-identity` has its manual-only `0.0.0` bootstrap, and
-> the synchronized `0.1.2` release is its first advertised stable publication.
-> The `0.1.1` workflow stopped before packing or publishing any package.
-> `@pegma/authorization-entra` lands as the ninth package and follows the same
-> one-time `0.0.0` bootstrap before a synchronized `0.1.4` release.
+> yet stable. The synchronized `0.1.4` release is the first advertised
+> publication that includes `@pegma/authorization-entra` as the ninth package.
+> Earlier `0.1.x` history: the original seven packages shipped at `0.1.0`;
+> Identity's first advertised stable release was `0.1.2`; security fixes landed
+> in `0.1.3`.
 
 ## Why Authorization Core?
 
