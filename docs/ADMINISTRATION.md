@@ -1,9 +1,9 @@
 # Role administration (`@pegma/authorization-admin` — proposed)
 
-Status: **design under review** — no package exists yet, deliberately (an
-empty package makes a compatibility promise while supplying nothing). This
-document is the extraction design; implementation begins only after it is
-accepted.
+Status: **implemented** (`packages/admin`, tested against the memory
+store). Not yet published: the one-time `0.0.0` name reservation under the
+`bootstrap` dist-tag and trusted-publisher configuration must complete
+before the next synchronized release advertises it (`docs/RELEASING.md`).
 
 ## Why now
 
