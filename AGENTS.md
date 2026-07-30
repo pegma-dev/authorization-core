@@ -78,10 +78,11 @@ workflow stopped in its unprivileged test step before packing or publishing
 anything. Version `0.1.2` corrects only that release test and is the adapter's
 first advertised stable publication.
 
-`@pegma/authorization-entra` is the ninth package. It lands after both timing
-gates in `docs/ENTRA_ADAPTER.md` opened, follows the same one-time `0.0.0`
-bootstrap under the non-default `bootstrap` dist-tag, and joins the
-synchronized inventory at `0.1.4`.
+`@pegma/authorization-entra` is the ninth package. It landed after both timing
+gates in `docs/ENTRA_ADAPTER.md` opened. Its package-only `0.0.0` name
+reservation is published under `bootstrap` from merge commit
+`b609f709fecbcc0507b7021e7177d488f0aad574`, and the synchronized `0.1.4`
+release is its first advertised stable publication.
 
 ## Where things stand
 

@@ -234,19 +234,17 @@ not create a GitHub release for the package-name reservation itself.
 ## Bootstrap for the new Entra adapter package
 
 `@pegma/authorization-entra` was not one of the eight names reserved by the
-completed bootstrap ceremonies. Before the package joins an advertised
-synchronized release, it needs the same one-time name reservation and
-trusted-publisher configuration. This does not reopen or alter the completed
-seven-package `v0.0.0` ceremony or the Identity package bootstrap.
+completed bootstrap ceremonies. Its one-time name reservation and
+trusted-publisher configuration completed on 2026-07-29 from merge commit
+`b609f709fecbcc0507b7021e7177d488f0aad574`. This does not reopen or alter the
+completed seven-package `v0.0.0` ceremony or the Identity package bootstrap.
 
 The audited bootstrap source stays internally consistent: root and all nine
-source packages use common version `0.1.3`, and the new package keeps its exact
-`@pegma/authorization-contracts@0.1.3` dependency. After the Entra adapter pull
-request merges, create a protected signed annotated
-`authorization-entra-v0.0.0` source tag targeting that exact merge commit.
-Always prepare the name-reservation artifact from that tag, never from a later
-synchronized release branch. The dedicated package-only gate stages only the
-new package with publish version `0.0.0`:
+source packages used common version `0.1.3`, and the new package kept its exact
+`@pegma/authorization-contracts@0.1.3` dependency. The dedicated package-only
+gate stages only the new package with publish version `0.0.0`. The recipe below
+remains as the recovery and audit record; do not repeat the ceremony or promote
+`0.0.0` to `latest`.
 
 The first fetch is not optional. `--require-main-ancestor` asks whether the
 checked-out commit is an ancestor of `origin/main`, so a tag-only fetch would
@@ -275,8 +273,7 @@ a bootstrap-only schema and exactly one package. There is deliberately no
 bootstrap publish command, the tool refuses release/OIDC authority, and the
 stable OIDC publisher rejects its manifest.
 
-After verifying the signed annotated `authorization-entra-v0.0.0` source tag,
-publish only the prepared tarball manually:
+Publish only the prepared tarball manually:
 
 ```sh
 npm publish .entra-bootstrap/pegma-authorization-entra-0.0.0.tgz --access public --tag bootstrap
@@ -324,6 +321,9 @@ prepared or published. The `0.1.2` correction changes only the release test,
 the common synchronized version, exact internal dependency versions, lockfile,
 and these release records. It is the first advertised stable release for
 `@pegma/authorization-identity`; there are no runtime or public API changes.
+The `0.1.3` release advances the eight-package inventory for the 2026-07-29
+security fixes. The `0.1.4` release follows the same invariant with nine
+workspaces and first advertises `@pegma/authorization-entra`.
 
 After that pull request is merged, identify the exact `origin/main` commit.
 With the same protected `v*` tag ruleset, create and push a signed annotated tag
@@ -344,9 +344,9 @@ git verify-tag v0.1.0
 gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
 ```
 
-For this prepared release, use `v0.1.2` consistently in those commands after
-the reviewed release pull request merges. Never move the existing `v0.1.0` or
-`v0.1.1` tags.
+For this prepared release, use `v0.1.4` consistently in those commands after
+the reviewed release pull request merges. Never move the existing `v0.1.0`,
+`v0.1.1`, `v0.1.2`, or `v0.1.3` tags.
 
 The workflow's unprivileged preparation job checks out the fully qualified tag,
 requires an approved valid SSH-signed annotated tag, and proves that the tag
@@ -361,9 +361,10 @@ Only the minimal protected `npm-publish` job receives `id-token: write`. It
 runs pinned checkout, Node setup, and artifact-download actions, installs no
 dependencies, uses the reviewed Node 24.18.0 runtime whose bundled npm supports
 trusted publishing (npm 11.5.1 or newer), rechecks the event commit, manifest
-tag, and tarball hashes, then publishes contracts first, followed by the five
-contracts-only consumers, storage, and tokens. The downloaded Actions artifact
-also fails on a transport digest mismatch.
+tag, and tarball hashes, then publishes contracts first, followed by the
+contracts-only consumers (Auth0, Entra, Identity, core, policy, Stripe),
+storage, and tokens. The downloaded Actions artifact also fails on a transport
+digest mismatch.
 
 Do not let `gh release create` create a tag, and do not move or recreate a
 release tag. If a release needs different bytes, prepare a new version.

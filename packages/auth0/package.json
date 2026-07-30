@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-auth0",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Verified Auth0 issuer-and-subject translation for Authorization Core.",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "directory": "packages/auth0"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.1.3"
+    "@pegma/authorization-contracts": "0.1.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

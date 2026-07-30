@@ -66,7 +66,7 @@ describe("release package metadata", () => {
 
   it("validates the repository, package manifests, and lockfile together", async () => {
     await expect(validateRepository()).resolves.toMatchObject({
-      version: "0.1.3",
+      version: "0.1.4",
     });
   });
 
@@ -91,7 +91,7 @@ describe("release package metadata", () => {
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
       await expect(validateIdentityBootstrapRepository()).rejects.toThrow(
-        "identity bootstrap source requires root 0.1.0, found 0.1.3",
+        "identity bootstrap source requires root 0.1.0, found 0.1.4",
       );
     } finally {
       for (const [key, value] of releaseEnvironment) {
@@ -100,7 +100,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateIdentityBootstrapRepository({ releaseTag: "v0.1.3" }),
+      validateIdentityBootstrapRepository({ releaseTag: "v0.1.4" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -159,10 +159,9 @@ describe("release package metadata", () => {
     );
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
-      await expect(validateEntraBootstrapRepository()).resolves.toMatchObject({
-        sourceVersion: "0.1.3",
-        version: "0.0.0",
-      });
+      await expect(validateEntraBootstrapRepository()).rejects.toThrow(
+        "entra bootstrap source requires root 0.1.3, found 0.1.4",
+      );
     } finally {
       for (const [key, value] of releaseEnvironment) {
         if (value === undefined) delete process.env[key];
@@ -170,7 +169,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateEntraBootstrapRepository({ releaseTag: "v0.1.3" }),
+      validateEntraBootstrapRepository({ releaseTag: "v0.1.4" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -234,12 +233,12 @@ describe("release package metadata", () => {
   });
 
   it("requires a stable release tag that exactly matches the common version", async () => {
-    await expect(validateRepository({ releaseTag: "v0.1.4" })).rejects.toThrow(
-      "release tag must be v0.1.3",
+    await expect(validateRepository({ releaseTag: "v0.1.5" })).rejects.toThrow(
+      "release tag must be v0.1.4",
     );
     await expect(
       validateRepository({
-        releaseTag: "v0.1.3",
+        releaseTag: "v0.1.4",
         releasePrerelease: true,
       }),
     ).rejects.toThrow("prereleases cannot publish packages");

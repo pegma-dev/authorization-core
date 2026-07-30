@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-storage",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Provider-neutral persistence ports and in-memory reference storage for Authorization Core.",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "directory": "packages/storage"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.1.3",
+    "@pegma/authorization-contracts": "0.1.4",
     "@pegma/storage-core": "0.3.0"
   },
   "scripts": {
