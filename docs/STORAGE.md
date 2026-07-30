@@ -53,6 +53,17 @@ Successful results return the stored link, so a caller always reads back what
 is actually persisted. Concurrent writes for one free tuple settle on exactly
 one winner; the losers observe `conflict`.
 
+`linkIdentity` carries no audit payload. The identity-linking model keeps the
+audit obligation with the host and deliberately defers a library audit event
+schema (see [Identity linking](IDENTITY_LINKING.md)), so unlike role mutation
+there is no combined link-and-audit command. The operation is shaped so a host
+can still make its audit trail reliable without one: durably record the audit
+intent — actor, key, principal, reason — before calling, then complete the
+record from the returned outcome. A crash between the two is recovered by
+replaying the write, which is safe because an identical replay is `unchanged`
+and every outcome reads back the stored edge; the recovered outcome completes
+the pending audit record.
+
 There is deliberately no unlink, relink, or transfer operation. Moving a tuple
 between principals is a host administrative decision with provider-specific
 evidence requirements, outside this port. A host whose subject-to-principal

@@ -212,14 +212,28 @@ must take effect predictably):
 1. the ledger read at authorization time must be from trusted durable state,
    fail closed when missing or unavailable, and never fall back to
    last-known-good;
-2. webhook pipeline health becomes the freshness guarantee. A silently dead
-   endpoint no longer ages grants out, so the host must monitor delivery —
-   for example alert on webhook silence beyond its normal event cadence and
-   verify the endpoint's registration — and treat pipeline failure as an
-   incident, not a quiet degradation;
+2. webhook pipeline health becomes the freshness guarantee, and it must stay
+   fail-closed rather than alert-only. A silently dead endpoint no longer ages
+   grants out, and monitoring by itself leaves paid access open until a human
+   responds. The host must therefore confirm pipeline health on a bounded
+   cadence — for example a periodic job that verifies the endpoint's
+   registration and recent event flow against Stripe and advances a single
+   durable pipeline-health confirmation time — and the authorization-time read
+   must reject when that confirmation exceeds the host's chosen and documented
+   bound. This is the same enforced-staleness obligation the full adapter's
+   `maximumStateAgeMs` implements (security requirement 8 in the project
+   plan), moved from per-principal facts — where a webhook ledger has no
+   honest confirmation time — to the pipeline whose silence is the actual
+   risk. A dead pipeline then denies predictably instead of granting
+   indefinitely;
 3. event ordering and supersession decide correctness: a fact must never be
-   overwritten by an older event, so the ledger writer keeps a per-customer
-   event watermark and discards events at or behind it.
+   overwritten by an older event. Stripe does not deliver a total order across
+   independently changing objects, so ordering is tracked per independently
+   superseded object — for example per subscription — never as one
+   per-customer watermark, which would discard an older but still-necessary
+   event for a different object, including a cancellation. Alternatively the
+   writer re-fetches authoritative complete state after each event and
+   persists that, making delivery order irrelevant.
 
 Hosts that do run periodic reconciliation against Stripe should prefer the
 full adapter: its enforced bound is then honest and turns a broken pipeline

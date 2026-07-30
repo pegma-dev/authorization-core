@@ -40,7 +40,11 @@ not enter the audit record.
 already-linked key attaching to a different principal is a fail-closed
 `conflict` that leaves the existing edge untouched. Control-of-identity
 evidence, caller authorization, and the audit record remain host obligations
-around that call. See [Storage ports](STORAGE.md).
+around that call. The idempotent replay is what makes the audit obligation
+satisfiable without a combined command: record the audit intent durably before
+the write, complete it from the returned outcome, and recover a crash between
+the two by replaying the write and completing the pending record. See
+[Storage ports](STORAGE.md).
 
 ## Unlinking
 
