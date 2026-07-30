@@ -240,8 +240,8 @@ trusted-publisher configuration. This does not reopen or alter the completed
 seven-package `v0.0.0` ceremony or the Identity package bootstrap.
 
 The audited bootstrap source stays internally consistent: root and all nine
-source packages use common version `0.1.2`, and the new package keeps its exact
-`@pegma/authorization-contracts@0.1.2` dependency. After the Entra adapter pull
+source packages use common version `0.1.3`, and the new package keeps its exact
+`@pegma/authorization-contracts@0.1.3` dependency. After the Entra adapter pull
 request merges, create a protected signed annotated
 `authorization-entra-v0.0.0` source tag targeting that exact merge commit.
 Always prepare the name-reservation artifact from that tag, never from a later
@@ -286,9 +286,9 @@ configure the same `publish.yml` / `npm-publish` trusted publisher described
 above.
 
 Keep the unavoidable `latest=0.0.0` window as short as operationally possible.
-The synchronized `0.1.3` release then moves the new package's `latest` tag to
-`0.1.3` while publishing the synchronized version of the eight existing
-packages. Confirm `latest` is `0.1.3`, `bootstrap` remains `0.0.0`, and both
+The synchronized `0.1.4` release then moves the new package's `latest` tag to
+`0.1.4` while publishing the synchronized version of the eight existing
+packages. Confirm `latest` is `0.1.4`, `bootstrap` remains `0.0.0`, and both
 registry integrities match. Do not create a GitHub release for the package-name
 reservation itself.
 

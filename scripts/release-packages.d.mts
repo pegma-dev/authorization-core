@@ -15,7 +15,7 @@ export interface IdentityBootstrapPackageDefinition {
 export interface EntraBootstrapPackageDefinition {
   readonly directory: "entra";
   readonly name: "@pegma/authorization-entra";
-  readonly sourceVersion: "0.1.2";
+  readonly sourceVersion: "0.1.3";
   readonly version: "0.0.0";
 }
 
@@ -62,7 +62,7 @@ export function validateEntraBootstrapRepository(
   options?: ValidationOptions,
 ): Promise<{
   root: string;
-  sourceVersion: "0.1.2";
+  sourceVersion: "0.1.3";
   version: "0.0.0";
 }>;
 

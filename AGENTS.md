@@ -81,7 +81,7 @@ first advertised stable publication.
 `@pegma/authorization-entra` is the ninth package. It lands after both timing
 gates in `docs/ENTRA_ADAPTER.md` opened, follows the same one-time `0.0.0`
 bootstrap under the non-default `bootstrap` dist-tag, and joins the
-synchronized inventory at `0.1.3`.
+synchronized inventory at `0.1.4`.
 
 ## Where things stand
 

@@ -151,7 +151,7 @@ const IDENTITY_BOOTSTRAP = packageBootstrapDefinition({
 const ENTRA_BOOTSTRAP = packageBootstrapDefinition({
   directory: "entra",
   name: "@pegma/authorization-entra",
-  sourceVersion: "0.1.2",
+  sourceVersion: "0.1.3",
   version: "0.0.0",
   kind: "authorization-entra-package-bootstrap",
   schemaVersion: 1,

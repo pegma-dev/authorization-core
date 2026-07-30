@@ -219,7 +219,7 @@ Three steps, in order, following the Identity precedent exactly:
 2. One-time name bootstrap: publish `@pegma/authorization-entra@0.0.0` under
    the `bootstrap` dist-tag and configure npm trusted publishing. Never
    promote `0.0.0`.
-3. Synchronized release `0.1.3`: root, all nine package manifests, every
+3. Synchronized release `0.1.4`: root, all nine package manifests, every
    exact internal dependency, and the lockfile advance together;
    `RELEASE_NOTES.md` announces entra as the ninth package with no behavioral
    changes to the other eight.

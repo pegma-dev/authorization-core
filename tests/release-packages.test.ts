@@ -143,7 +143,7 @@ describe("release package metadata", () => {
     expect(ENTRA_BOOTSTRAP_PACKAGE).toEqual({
       directory: "entra",
       name: "@pegma/authorization-entra",
-      sourceVersion: "0.1.2",
+      sourceVersion: "0.1.3",
       version: "0.0.0",
     });
     const releaseEnvironmentKeys = [
@@ -160,7 +160,7 @@ describe("release package metadata", () => {
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
       await expect(validateEntraBootstrapRepository()).resolves.toMatchObject({
-        sourceVersion: "0.1.2",
+        sourceVersion: "0.1.3",
         version: "0.0.0",
       });
     } finally {
@@ -170,7 +170,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateEntraBootstrapRepository({ releaseTag: "v0.1.2" }),
+      validateEntraBootstrapRepository({ releaseTag: "v0.1.3" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -199,7 +199,7 @@ describe("release package metadata", () => {
     expect(entraBootstrap).toContain(
       "npm publish .entra-bootstrap/pegma-authorization-entra-0.0.0.tgz",
     );
-    expect(entraBootstrap).toContain("0.1.3");
+    expect(entraBootstrap).toContain("0.1.4");
     expect(entraBootstrap).not.toMatch(/\bentra-bootstrap:publish\b/);
   });
 

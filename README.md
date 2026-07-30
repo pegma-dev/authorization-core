@@ -12,7 +12,7 @@ Provider-neutral roles, entitlements, and permissions for SaaS applications.
 > the synchronized `0.1.2` release is its first advertised stable publication.
 > The `0.1.1` workflow stopped before packing or publishing any package.
 > `@pegma/authorization-entra` lands as the ninth package and follows the same
-> one-time `0.0.0` bootstrap before a synchronized `0.1.3` release.
+> one-time `0.0.0` bootstrap before a synchronized `0.1.4` release.
 
 ## Why Authorization Core?
 
