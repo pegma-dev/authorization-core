@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-tokens",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Short-lived, one-use signed access grants for Authorization Core.",
   "license": "MIT",
   "type": "module",
@@ -32,8 +32,8 @@
     "directory": "packages/tokens"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.1.4",
-    "@pegma/storage-core": "0.3.0",
+    "@pegma/authorization-contracts": "0.2.0",
+    "@pegma/storage-core": "0.4.0",
     "jose": "6.2.3"
   },
   "scripts": {
