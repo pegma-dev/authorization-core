@@ -737,6 +737,16 @@ roles, and one protected module using only public documentation.
 - [ ] Publish adapter conformance tests.
 - [ ] Complete an external security review or focused authorization audit.
 - [ ] Document semantic-versioning and deprecation policy.
+- [ ] Decide the identity-link audit boundary before contracts freeze:
+      a library-mechanized combined write mirroring the audited role commands,
+      or permanently host-owned via the documented write-ahead intent
+      protocol. Driven by the first durable-link consumer or the pre-`1.0`
+      threat model, whichever comes first. Deciding late is not free: if the
+      audited command should be the only write — as it is for roles — demoting
+      raw `linkIdentity` after `1.0` would break a stable contract. Raised by
+      review on pull request #27; deferred on 2026-07-30 because `linkIdentity`
+      has no consumer yet and the audit schema should be shaped by real
+      integration evidence, not invented ahead of it.
 - [ ] Release `1.0.0` only after the contracts survive multiple consumers.
 
 **First external adapter integration (2026-07-28):** `pegma.dev` pins and runs
