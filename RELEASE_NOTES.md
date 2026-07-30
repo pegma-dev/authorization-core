@@ -1,3 +1,29 @@
+# Authorization Core 0.4.0
+
+Authorization Core 0.4.0 first advertises `@pegma/authorization-admin`, the
+tenth package: the HTTP-neutral audited role-administration service both
+reference hosts previously duplicated (design and contract in
+`docs/ADMINISTRATION.md`).
+
+The service owns the grants view with an explicit management policy
+(ongoing system actors lock; declared one-time actors stay human-managed),
+audited assign with the holder-index write-before-grant discipline, audited
+revoke with the last-administrator guard — in-process serialization, typed
+refusal, post-commit re-verification, and an honest compensation outcome,
+with exact-scope holder matching so an organization-scoped administrator
+never masks the loss of the last application-scoped one — per-principal
+lifecycle history over `listRoleAssignments`, and `ensureSeededAssignment`,
+the once-per-principal-and-role seed whose already-seeded signal is
+lifecycle history and whose conflicts fail closed. Hosts keep the HTTP
+envelope, UI, principal lookup, rate limiting, and the authorization of the
+service's own callers.
+
+The version advances to `0.4.0` because the workspace gains a public
+package; there are no behavioral changes to the nine existing packages. The
+root, all ten public package manifests, every exact internal Authorization
+dependency, and the lockfile advance together to `0.4.0`. All ten packages
+require Node.js 22 or newer and remain MIT licensed.
+
 # Authorization Core 0.3.0
 
 Authorization Core 0.3.0 delivers the storage surface additions from the first

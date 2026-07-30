@@ -70,7 +70,7 @@ describe("release package metadata", () => {
 
   it("validates the repository, package manifests, and lockfile together", async () => {
     await expect(validateRepository()).resolves.toMatchObject({
-      version: "0.3.0",
+      version: "0.4.0",
     });
   });
 
@@ -95,7 +95,7 @@ describe("release package metadata", () => {
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
       await expect(validateIdentityBootstrapRepository()).rejects.toThrow(
-        "identity bootstrap source requires root 0.1.0, found 0.3.0",
+        "identity bootstrap source requires root 0.1.0, found 0.4.0",
       );
     } finally {
       for (const [key, value] of releaseEnvironment) {
@@ -104,7 +104,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateIdentityBootstrapRepository({ releaseTag: "v0.3.0" }),
+      validateIdentityBootstrapRepository({ releaseTag: "v0.4.0" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -164,7 +164,7 @@ describe("release package metadata", () => {
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
       await expect(validateEntraBootstrapRepository()).rejects.toThrow(
-        "entra bootstrap source requires root 0.1.3, found 0.3.0",
+        "entra bootstrap source requires root 0.1.3, found 0.4.0",
       );
     } finally {
       for (const [key, value] of releaseEnvironment) {
@@ -173,7 +173,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateEntraBootstrapRepository({ releaseTag: "v0.3.0" }),
+      validateEntraBootstrapRepository({ releaseTag: "v0.4.0" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -229,11 +229,9 @@ describe("release package metadata", () => {
     );
     try {
       for (const key of releaseEnvironmentKeys) delete process.env[key];
-      // The admin bootstrap source IS the current 0.3.0 tree.
-      await expect(validateAdminBootstrapRepository()).resolves.toMatchObject({
-        sourceVersion: "0.3.0",
-        version: "0.0.0",
-      });
+      await expect(validateAdminBootstrapRepository()).rejects.toThrow(
+        "admin bootstrap source requires root 0.3.0, found 0.4.0",
+      );
     } finally {
       for (const [key, value] of releaseEnvironment) {
         if (value === undefined) delete process.env[key];
@@ -241,7 +239,7 @@ describe("release package metadata", () => {
       }
     }
     await expect(
-      validateAdminBootstrapRepository({ releaseTag: "v0.3.0" }),
+      validateAdminBootstrapRepository({ releaseTag: "v0.4.0" }),
     ).rejects.toThrow("refuses release or OIDC authority");
 
     const rootManifest = JSON.parse(
@@ -307,11 +305,11 @@ describe("release package metadata", () => {
 
   it("requires a stable release tag that exactly matches the common version", async () => {
     await expect(validateRepository({ releaseTag: "v0.1.5" })).rejects.toThrow(
-      "release tag must be v0.3.0",
+      "release tag must be v0.4.0",
     );
     await expect(
       validateRepository({
-        releaseTag: "v0.3.0",
+        releaseTag: "v0.4.0",
         releasePrerelease: true,
       }),
     ).rejects.toThrow("prereleases cannot publish packages");

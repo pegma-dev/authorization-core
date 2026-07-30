@@ -1,6 +1,6 @@
 {
   "name": "@pegma/authorization-admin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "HTTP-neutral audited role-administration service for Authorization Core hosts.",
   "license": "MIT",
   "type": "module",
@@ -28,8 +28,8 @@
     "directory": "packages/admin"
   },
   "dependencies": {
-    "@pegma/authorization-contracts": "0.3.0",
-    "@pegma/authorization-storage": "0.3.0"
+    "@pegma/authorization-contracts": "0.4.0",
+    "@pegma/authorization-storage": "0.4.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

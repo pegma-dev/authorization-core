@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "kind": "authorization-admin-package-bootstrap",
+  "sourceVersion": "0.3.0",
+  "version": "0.0.0",
+  "gitCommit": "c819850c03064586a38c70c1ff85bce3146c221e",
+  "package": {
+    "name": "@pegma/authorization-admin",
+    "version": "0.0.0",
+    "directory": "admin",
+    "tarball": "pegma-authorization-admin-0.0.0.tgz",
+    "integrity": "sha512-Imdp1unbh9B2b1cK5Zcar/6ssFo759z7b4KvIVDrWfS6xMDdYgnceUQjVFHztXRpSSse8mmLTUqhmLoe4C307g==",
+    "shasum": "055a9c5955799ec64d876da84a86d238b275cc28",
+    "files": [
+      {
+        "path": "dist/index.d.ts",
+        "size": 8202
+      },
+      {
+        "path": "dist/index.d.ts.map",
+        "size": 4077
+      },
+      {
+        "path": "dist/index.js",
+        "size": 11911
+      },
+      {
+        "path": "dist/index.js.map",
+        "size": 26740
+      },
+      {
+        "path": "LICENSE",
+        "size": 1074
+      },
+      {
+        "path": "package.json",
+        "size": 904
+      },
+      {
+        "path": "README.md",
+        "size": 811
+      }
+    ]
+  }
+}
