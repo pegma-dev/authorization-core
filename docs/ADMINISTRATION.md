@@ -1,9 +1,10 @@
 # Role administration (`@pegma/authorization-admin`)
 
 Status: **implemented** (`packages/admin`, tested against the memory
-store). Not yet published: the one-time `0.0.0` name reservation under the
-`bootstrap` dist-tag and trusted-publisher configuration must complete
-before the next synchronized release advertises it (`docs/RELEASING.md`).
+store). The one-time `0.0.0` name reservation and trusted-publisher
+configuration completed on 2026-07-30 (`docs/RELEASING.md` records the
+ceremony — do not repeat it); the synchronized `0.4.0` release is the
+first advertised publication.
 
 ## Why now
 

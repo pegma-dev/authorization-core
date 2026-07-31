@@ -309,11 +309,12 @@ with two dependencies, both already published, so the clean consumer
 install resolves them from the registry. The dedicated package-only gate
 stages only the new package with publish version `0.0.0`.
 
-Create the protected signed annotated `authorization-admin-v0.0.0` tag
-once, targeting the merged `main` commit that carries this bootstrap
-tooling; record the exact target commit here when the ceremony completes.
-If verification of an existing tag fails, stop: do not recreate, move, or
-force the tag.
+The protected signed annotated `authorization-admin-v0.0.0` tag targets
+merged `main` commit `c819850c03064586a38c70c1ff85bce3146c221e`; the
+one-time name reservation was published under the `bootstrap` dist-tag on
+2026-07-30. The recipe below remains as the recovery and audit record. If
+verification of the tag fails, stop: do not recreate, move, or force the
+tag.
 
 The first fetch is not optional. `--require-main-ancestor` asks whether the
 checked-out commit is an ancestor of `origin/main`, so a tag-only fetch
@@ -414,9 +415,9 @@ git verify-tag v0.1.0
 gh release create v0.1.0 --verify-tag --title "v0.1.0" --notes-file RELEASE_NOTES.md
 ```
 
-For this prepared release, use `v0.3.0` consistently in those commands after
+For this prepared release, use `v0.4.0` consistently in those commands after
 the reviewed release pull request merges. Never move the existing `v0.1.0`,
-`v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.4`, or `v0.2.0` tags.
+`v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.4`, `v0.2.0`, or `v0.3.0` tags.
 
 The workflow's unprivileged preparation job checks out the fully qualified tag,
 requires an approved valid SSH-signed annotated tag, and proves that the tag

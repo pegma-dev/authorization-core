@@ -9,9 +9,10 @@ pre-publish `v0.1.1` release-test failure and first advertises Identity as the
 eighth package; synchronized `v0.1.3` resolves the 2026-07-29 security review;
 synchronized `v0.1.4` first advertises Entra as the ninth package; synchronized
 `v0.2.0` aligns `@pegma/storage-core` at `0.4.0` across the stack;
-synchronized `v0.3.0` is prepared, delivering the identity-link write and
-lifecycle listing from the first reference-consumer feedback; `0.x` public API
-remains unstable)
+synchronized `v0.3.0` delivers the identity-link write and lifecycle
+listing from the first reference-consumer feedback; synchronized `v0.4.0`
+is prepared, first advertising the Admin role-administration service as the
+tenth package; `0.x` public API remains unstable)
 
 **Initial reference application:** RetireGolden
 
