@@ -85,7 +85,7 @@ reservation is published under `bootstrap` from merge commit
 release is its first advertised stable publication.
 
 `@pegma/authorization-admin` is the tenth package, the role-administration
-service extracted from the two reference hosts (docs/ADMINISTRATION.md). It
+service extracted from the two reference hosts (docs/ADMINISTRATION.md).
 Its package-only `0.0.0` name reservation is published under the
 non-default `bootstrap` dist-tag from merge commit
 `c819850c03064586a38c70c1ff85bce3146c221e` (signed
