@@ -297,7 +297,9 @@ function run(command, arguments_, options = {}) {
 }
 
 function runNpm(arguments_, options = {}) {
-  return run("npm", arguments_, options);
+  const env = { ...(options.env ?? process.env) };
+  delete env.npm_execpath;
+  return run("npm", arguments_, { ...options, env });
 }
 
 function runPnpm(arguments_, options = {}) {
@@ -523,21 +525,127 @@ function parsePnpmLockImporters(text) {
       currentSection !== null &&
       currentDependency !== null
     ) {
-      importers[currentImporter][currentSection][currentDependency] =
-        specifierMatch[1];
+      const entry =
+        importers[currentImporter][currentSection][currentDependency];
+      if (entry === undefined) {
+        importers[currentImporter][currentSection][currentDependency] = {
+          specifier: specifierMatch[1],
+        };
+      } else {
+        entry.specifier = specifierMatch[1];
+      }
+      index += 1;
+      continue;
+    }
+    const resolvedMatch = /^        version:\s+(.+?)\s*$/u.exec(line);
+    if (
+      resolvedMatch !== null &&
+      currentImporter !== null &&
+      currentSection !== null &&
+      currentDependency !== null
+    ) {
+      const entry =
+        importers[currentImporter][currentSection][currentDependency];
+      if (entry === undefined) {
+        importers[currentImporter][currentSection][currentDependency] = {
+          version: resolvedMatch[1],
+        };
+      } else {
+        entry.version = resolvedMatch[1];
+      }
     }
     index += 1;
   }
   return { lockfileVersion: versionMatch?.[1], importers };
 }
 
+export function resolvedVersionMatchesSpecifier(specifier, resolved) {
+  if (typeof specifier !== "string" || typeof resolved !== "string") {
+    return false;
+  }
+  if (resolved.startsWith("link:")) {
+    return true;
+  }
+  const resolvedVersion = resolved.split("(")[0];
+  if (specifier === resolvedVersion) {
+    return true;
+  }
+  if (STABLE_SEMVER.test(specifier)) {
+    return false;
+  }
+  const resolvedParts = STABLE_SEMVER.exec(resolvedVersion);
+  if (resolvedParts === null) {
+    return false;
+  }
+  const caret = /^\^(\d+)\.(\d+)\.(\d+)$/u.exec(specifier);
+  if (caret !== null) {
+    const specMajor = Number(caret[1]);
+    const specMinor = Number(caret[2]);
+    const specPatch = Number(caret[3]);
+    const resolvedMajor = Number(resolvedParts[1]);
+    const resolvedMinor = Number(resolvedParts[2]);
+    const resolvedPatch = Number(resolvedParts[3]);
+    if (specMajor === 0) {
+      return (
+        resolvedMajor === 0 &&
+        resolvedMinor === specMinor &&
+        resolvedPatch >= specPatch
+      );
+    }
+    return (
+      resolvedMajor === specMajor &&
+      (resolvedMinor > specMinor ||
+        (resolvedMinor === specMinor && resolvedPatch >= specPatch))
+    );
+  }
+  const tilde = /^~(\d+)\.(\d+)\.(\d+)$/u.exec(specifier);
+  if (tilde !== null) {
+    return (
+      Number(resolvedParts[1]) === Number(tilde[1]) &&
+      Number(resolvedParts[2]) === Number(tilde[2]) &&
+      Number(resolvedParts[3]) >= Number(tilde[3])
+    );
+  }
+  return false;
+}
+
+function lockfileSpecifierMap(importer) {
+  const mapped = {};
+  for (const section of DEPENDENCY_SECTIONS) {
+    mapped[section] = Object.fromEntries(
+      Object.entries(importer?.[section] ?? {}).map(([name, entry]) => [
+        name,
+        entry?.specifier,
+      ]),
+    );
+  }
+  return mapped;
+}
+
 function validateLockImporter(importer, manifest, version, location) {
   for (const section of DEPENDENCY_SECTIONS) {
-    if (!sameJson(importer?.[section] ?? {}, manifest[section] ?? {})) {
+    const expected = manifest[section] ?? {};
+    const actual = importer?.[section] ?? {};
+    if (!sameJson(Object.keys(expected).sort(), Object.keys(actual).sort())) {
       fail(`${location} ${section} does not match its package manifest`);
     }
+    for (const [name, specifier] of Object.entries(expected)) {
+      const entry = actual[name];
+      if (
+        entry?.specifier !== specifier ||
+        !resolvedVersionMatchesSpecifier(specifier, entry?.version)
+      ) {
+        fail(
+          `${location} ${section}.${name} must match specifier ${specifier} and its resolved version`,
+        );
+      }
+    }
   }
-  validateInternalDependencies(importer ?? {}, version, location);
+  validateInternalDependencies(
+    lockfileSpecifierMap(importer),
+    version,
+    location,
+  );
 }
 
 export async function validateRepository(options = {}) {

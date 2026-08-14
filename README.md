@@ -72,6 +72,7 @@ billing state, target-scoped roles, permission middleware, audited
 administration, safe logs, public JWKS, and one-use service grants:
 
 ```sh
+corepack enable
 pnpm install --frozen-lockfile
 pnpm run example
 ```
@@ -351,6 +352,7 @@ authorization boundaries, compatibility effects, and safe staged migrations.
 Authorization Core requires Node.js 22 or newer.
 
 ```sh
+corepack enable
 pnpm install --frozen-lockfile
 pnpm run check
 pnpm test

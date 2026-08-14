@@ -9,6 +9,7 @@ The runnable [reference API](../examples/reference-api/README.md) is the
 shortest complete example. From a clean clone:
 
 ```sh
+corepack enable
 pnpm install --frozen-lockfile
 pnpm run example
 ```

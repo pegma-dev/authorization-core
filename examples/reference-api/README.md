@@ -24,6 +24,7 @@ entry points. It uses Node's built-in HTTP server and demonstrates:
 From a clean clone with Node.js 22 or newer:
 
 ```sh
+corepack enable
 pnpm install --frozen-lockfile
 pnpm run example
 ```
