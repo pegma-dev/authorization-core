@@ -12,9 +12,11 @@ Thank you for helping improve Authorization Core.
 
 ## Local development
 
-Authorization Core requires Node.js 22 or newer.
+Authorization Core requires Node.js 22 or newer. Node 25 and newer do not
+bundle Corepack, so install it before enabling the pinned pnpm.
 
 ```sh
+npm install -g corepack
 corepack enable
 pnpm install --frozen-lockfile
 pnpm run check

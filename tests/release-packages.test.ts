@@ -80,6 +80,7 @@ describe("release package metadata", () => {
       true,
     );
     expect(resolvedVersionMatchesSpecifier("0.4.0", "0.4.0")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^1.2.0", "1.2.3")).toBe(true);
     expect(resolvedVersionMatchesSpecifier("^26.1.1", "26.1.1")).toBe(true);
     expect(
       resolvedVersionMatchesSpecifier(
@@ -87,6 +88,9 @@ describe("release package metadata", () => {
         "4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1))",
       ),
     ).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("'*'", "1.2.3")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("'1'", "1.0.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("'1'", "1")).toBe(true);
     expect(resolvedVersionMatchesSpecifier("0.4.0", "999.0.0")).toBe(false);
     expect(resolvedVersionMatchesSpecifier("^26.1.1", "999.0.0")).toBe(false);
     expect(resolvedVersionMatchesSpecifier("0.4.0", undefined)).toBe(false);

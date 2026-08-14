@@ -459,14 +459,37 @@ async function requirePackageReleaseFiles(root, definition) {
   }
 }
 
-function parseQuotedYamlKey(raw) {
-  if (
-    (raw.startsWith("'") && raw.endsWith("'")) ||
-    (raw.startsWith('"') && raw.endsWith('"'))
-  ) {
-    return raw.slice(1, -1);
+function parseYamlScalar(raw) {
+  if (typeof raw !== "string") {
+    return raw;
   }
-  return raw;
+  const trimmed = raw.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replaceAll("''", "'");
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed
+      .slice(1, -1)
+      .replaceAll(/\\(u[0-9a-fA-F]{4}|["\\nrt])/gu, (_match, escape) => {
+        if (escape === '"') {
+          return '"';
+        }
+        if (escape === "\\") {
+          return "\\";
+        }
+        if (escape === "n") {
+          return "\n";
+        }
+        if (escape === "r") {
+          return "\r";
+        }
+        if (escape === "t") {
+          return "\t";
+        }
+        return String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+      });
+  }
+  return trimmed;
 }
 
 function parsePnpmLockImporters(text) {
@@ -490,7 +513,7 @@ function parsePnpmLockImporters(text) {
     }
     const importerMatch = /^  (\S[^:]*):\s*(?:\{\})?\s*$/u.exec(line);
     if (importerMatch !== null && !line.startsWith("    ")) {
-      currentImporter = parseQuotedYamlKey(importerMatch[1]);
+      currentImporter = parseYamlScalar(importerMatch[1]);
       importers[currentImporter] = {};
       currentSection = null;
       currentDependency = null;
@@ -514,7 +537,7 @@ function parsePnpmLockImporters(text) {
       currentImporter !== null &&
       currentSection !== null
     ) {
-      currentDependency = parseQuotedYamlKey(depMatch[1]);
+      currentDependency = parseYamlScalar(depMatch[1]);
       index += 1;
       continue;
     }
@@ -529,10 +552,10 @@ function parsePnpmLockImporters(text) {
         importers[currentImporter][currentSection][currentDependency];
       if (entry === undefined) {
         importers[currentImporter][currentSection][currentDependency] = {
-          specifier: specifierMatch[1],
+          specifier: parseYamlScalar(specifierMatch[1]),
         };
       } else {
-        entry.specifier = specifierMatch[1];
+        entry.specifier = parseYamlScalar(specifierMatch[1]);
       }
       index += 1;
       continue;
@@ -548,10 +571,10 @@ function parsePnpmLockImporters(text) {
         importers[currentImporter][currentSection][currentDependency];
       if (entry === undefined) {
         importers[currentImporter][currentSection][currentDependency] = {
-          version: resolvedMatch[1],
+          version: parseYamlScalar(resolvedMatch[1]),
         };
       } else {
-        entry.version = resolvedMatch[1];
+        entry.version = parseYamlScalar(resolvedMatch[1]);
       }
     }
     index += 1;
@@ -563,6 +586,8 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
   if (typeof specifier !== "string" || typeof resolved !== "string") {
     return false;
   }
+  specifier = parseYamlScalar(specifier);
+  resolved = parseYamlScalar(resolved);
   if (resolved.startsWith("link:")) {
     return true;
   }
@@ -577,14 +602,24 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
   if (resolvedParts === null) {
     return false;
   }
-  const caret = /^\^(\d+)\.(\d+)\.(\d+)$/u.exec(specifier);
+  const resolvedMajor = Number(resolvedParts[1]);
+  const resolvedMinor = Number(resolvedParts[2]);
+  const resolvedPatch = Number(resolvedParts[3]);
+  if (specifier === "*" || specifier === "x" || specifier === "X") {
+    return true;
+  }
+  const caret = /^\^(\d+)(?:\.(\d+)(?:\.(\d+))?)?$/u.exec(specifier);
   if (caret !== null) {
     const specMajor = Number(caret[1]);
-    const specMinor = Number(caret[2]);
-    const specPatch = Number(caret[3]);
-    const resolvedMajor = Number(resolvedParts[1]);
-    const resolvedMinor = Number(resolvedParts[2]);
-    const resolvedPatch = Number(resolvedParts[3]);
+    const specMinor = Number(caret[2] ?? "0");
+    const specPatch = Number(caret[3] ?? "0");
+    if (specMajor === 0 && specMinor === 0) {
+      return (
+        resolvedMajor === 0 &&
+        resolvedMinor === 0 &&
+        resolvedPatch === specPatch
+      );
+    }
     if (specMajor === 0) {
       return (
         resolvedMajor === 0 &&
@@ -598,12 +633,18 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
         (resolvedMinor === specMinor && resolvedPatch >= specPatch))
     );
   }
-  const tilde = /^~(\d+)\.(\d+)\.(\d+)$/u.exec(specifier);
+  const tilde = /^~(\d+)(?:\.(\d+)(?:\.(\d+))?)?$/u.exec(specifier);
   if (tilde !== null) {
+    const specMajor = Number(tilde[1]);
+    const specMinor = Number(tilde[2] ?? "0");
+    const specPatch = Number(tilde[3] ?? "0");
+    if (tilde[2] === undefined) {
+      return resolvedMajor === specMajor && resolvedMinor >= specMinor;
+    }
     return (
-      Number(resolvedParts[1]) === Number(tilde[1]) &&
-      Number(resolvedParts[2]) === Number(tilde[2]) &&
-      Number(resolvedParts[3]) >= Number(tilde[3])
+      resolvedMajor === specMajor &&
+      resolvedMinor === specMinor &&
+      resolvedPatch >= specPatch
     );
   }
   return false;
