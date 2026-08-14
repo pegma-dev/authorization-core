@@ -430,11 +430,11 @@ describe("release source authentication", () => {
     const publish = jobs.slice(publishStart);
     expect(prepare).not.toContain("id-token: write");
     expect(publish).toContain("id-token: write");
-    expect(publish).not.toContain("npm ci");
-    expect(publish).not.toContain("npm run check");
-    expect(publish).not.toContain("npm test");
+    expect(publish).not.toContain("pnpm install");
+    expect(publish).not.toContain("pnpm run check");
+    expect(publish).not.toContain("pnpm test");
     expect(publish).not.toContain("release:pack");
-    expect(publish).toContain("npm run release:publish");
+    expect(publish).toContain("pnpm run release:publish");
     expect(workflow).not.toContain("identity-bootstrap");
     expect(workflow).not.toContain("github.run_attempt");
     expect(workflow).toContain("retention-days: 30");

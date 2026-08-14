@@ -13,9 +13,9 @@ provider behavior, or migration requirements. Write "None" when not applicable.
 
 <!-- List the checks you ran. -->
 
-- [ ] `npm run check`
-- [ ] `npm test`
-- [ ] `npm run format:check`
+- [ ] `pnpm run check`
+- [ ] `pnpm test`
+- [ ] `pnpm run format:check`
 
 ## Checklist
 

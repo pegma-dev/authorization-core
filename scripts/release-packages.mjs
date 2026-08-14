@@ -297,11 +297,11 @@ function run(command, arguments_, options = {}) {
 }
 
 function runNpm(arguments_, options = {}) {
-  const npmExecPath = process.env.npm_execpath;
-  if (npmExecPath !== undefined) {
-    return run(process.execPath, [npmExecPath, ...arguments_], options);
-  }
   return run("npm", arguments_, options);
+}
+
+function runPnpm(arguments_, options = {}) {
+  return run("pnpm", arguments_, options);
 }
 
 function requireTrustedPublishingNpm() {
@@ -457,16 +457,87 @@ async function requirePackageReleaseFiles(root, definition) {
   }
 }
 
-function validateLockEntry(entry, manifest, version, location) {
-  if (entry?.name !== manifest.name || entry?.version !== version) {
-    fail(`${location} does not match ${manifest.name}@${version}`);
+function parseQuotedYamlKey(raw) {
+  if (
+    (raw.startsWith("'") && raw.endsWith("'")) ||
+    (raw.startsWith('"') && raw.endsWith('"'))
+  ) {
+    return raw.slice(1, -1);
   }
+  return raw;
+}
+
+function parsePnpmLockImporters(text) {
+  const versionMatch = /^lockfileVersion:\s+['"]?([^'"\s]+)['"]?\s*$/mu.exec(
+    text,
+  );
+  const lines = text.split(/\r?\n/u);
+  const importers = {};
+  let index = lines.indexOf("importers:");
+  if (index === -1) {
+    return { lockfileVersion: versionMatch?.[1], importers };
+  }
+  index += 1;
+  let currentImporter = null;
+  let currentSection = null;
+  let currentDependency = null;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (line !== "" && !line.startsWith(" ") && !line.startsWith("\t")) {
+      break;
+    }
+    const importerMatch = /^  (\S[^:]*):\s*(?:\{\})?\s*$/u.exec(line);
+    if (importerMatch !== null && !line.startsWith("    ")) {
+      currentImporter = parseQuotedYamlKey(importerMatch[1]);
+      importers[currentImporter] = {};
+      currentSection = null;
+      currentDependency = null;
+      index += 1;
+      continue;
+    }
+    const sectionMatch =
+      /^    (dependencies|devDependencies|optionalDependencies|peerDependencies):\s*$/u.exec(
+        line,
+      );
+    if (sectionMatch !== null && currentImporter !== null) {
+      currentSection = sectionMatch[1];
+      importers[currentImporter][currentSection] = {};
+      currentDependency = null;
+      index += 1;
+      continue;
+    }
+    const depMatch = /^      (\S[^:]*):\s*$/u.exec(line);
+    if (
+      depMatch !== null &&
+      currentImporter !== null &&
+      currentSection !== null
+    ) {
+      currentDependency = parseQuotedYamlKey(depMatch[1]);
+      index += 1;
+      continue;
+    }
+    const specifierMatch = /^        specifier:\s+(.+?)\s*$/u.exec(line);
+    if (
+      specifierMatch !== null &&
+      currentImporter !== null &&
+      currentSection !== null &&
+      currentDependency !== null
+    ) {
+      importers[currentImporter][currentSection][currentDependency] =
+        specifierMatch[1];
+    }
+    index += 1;
+  }
+  return { lockfileVersion: versionMatch?.[1], importers };
+}
+
+function validateLockImporter(importer, manifest, version, location) {
   for (const section of DEPENDENCY_SECTIONS) {
-    if (!sameJson(entry[section] ?? {}, manifest[section] ?? {})) {
+    if (!sameJson(importer?.[section] ?? {}, manifest[section] ?? {})) {
       fail(`${location} ${section} does not match its package manifest`);
     }
   }
-  validateInternalDependencies(entry, version, location);
+  validateInternalDependencies(importer ?? {}, version, location);
 }
 
 export async function validateRepository(options = {}) {
@@ -485,8 +556,12 @@ export async function validateRepository(options = {}) {
   ) {
     fail("root package must be the private authorization-core workspace");
   }
-  if (rootManifest.packageManager !== "npm@11.18.0") {
-    fail("root packageManager must pin npm@11.18.0");
+  const workspace = await readFile(join(root, "pnpm-workspace.yaml"), "utf8");
+  if (!/^packages:\r?\n  - ["']packages\/\*["']\r?\n?$/u.test(workspace)) {
+    fail("pnpm-workspace.yaml must list packages/*");
+  }
+  if (rootManifest.packageManager !== "pnpm@10.34.5") {
+    fail("root packageManager must pin pnpm@10.34.5");
   }
 
   const directories = (
@@ -506,25 +581,29 @@ export async function validateRepository(options = {}) {
     );
   }
 
-  const lock = await readJson(join(root, "package-lock.json"));
-  if (
-    lock.lockfileVersion !== 3 ||
-    lock.packages?.[""]?.version !== version ||
-    lock.packages?.[""]?.name !== rootManifest.name
-  ) {
-    fail("package-lock root metadata does not match package.json");
+  const lock = parsePnpmLockImporters(
+    await readFile(join(root, "pnpm-lock.yaml"), "utf8"),
+  );
+  if (lock.lockfileVersion !== "9.0") {
+    fail("pnpm-lock.yaml lockfileVersion must be 9.0");
   }
+  validateLockImporter(
+    lock.importers["."],
+    rootManifest,
+    version,
+    "pnpm-lock.yaml importers[.]",
+  );
 
   for (const definition of RELEASE_PACKAGES) {
     const manifest = await readJson(
       join(root, "packages", definition.directory, "package.json"),
     );
     validateManifest(manifest, definition, version);
-    validateLockEntry(
-      lock.packages?.[`packages/${definition.directory}`],
+    validateLockImporter(
+      lock.importers[`packages/${definition.directory}`],
       manifest,
       version,
-      `package-lock.json packages/${definition.directory}`,
+      `pnpm-lock.yaml importers[packages/${definition.directory}]`,
     );
     await requirePackageReleaseFiles(root, definition);
   }
@@ -601,7 +680,7 @@ function validatePackageBootstrapDependencies(bootstrap, manifest, location) {
       fail(`${location} must not declare ${section}`);
     }
   }
-  if (manifest.scripts?.prepack !== "npm run build") {
+  if (manifest.scripts?.prepack !== "pnpm run build") {
     fail(`${location} must build through its prepack script`);
   }
 }
@@ -784,7 +863,7 @@ export async function prepareRelease(options = {}) {
     fail(`release output directory must be empty: ${output}`);
   }
 
-  runNpm(["run", "build"], { cwd: root });
+  runPnpm(["run", "build"], { cwd: root });
   const packages = [];
   for (const definition of RELEASE_PACKAGES) {
     const result = runNpm(
@@ -955,10 +1034,10 @@ async function preparePackageBootstrap(bootstrap, options = {}) {
     );
   }
 
-  runNpm(["run", "build", "--workspace", "@pegma/authorization-contracts"], {
+  runPnpm(["--filter", "@pegma/authorization-contracts", "run", "build"], {
     cwd: root,
   });
-  runNpm(["run", "prepack", "--workspace", bootstrap.name], {
+  runPnpm(["--filter", bootstrap.name, "run", "prepack"], {
     cwd: root,
   });
 

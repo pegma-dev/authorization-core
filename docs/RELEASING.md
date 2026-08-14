@@ -424,9 +424,9 @@ requires an approved valid SSH-signed annotated tag, and proves that the tag
 target, checkout, and GitHub release-event commit are identical. It rejects
 prereleases, a tag/version mismatch, a tag commit not contained in
 `origin/main`, a dirty or inconsistent package set, or changed tarball bytes.
-That job uses Node 24.18.0 and npm 11.18.0, runs the full gate without OIDC
-publication authority, and uploads the prepared directory with a recorded
-artifact digest.
+That job uses Node 24.18.0 and the pinned pnpm 10.34.5 from Corepack, runs
+the full gate without OIDC publication authority, and uploads the prepared
+directory with a recorded artifact digest.
 
 Only the minimal protected `npm-publish` job receives `id-token: write`. It
 runs pinned checkout, Node setup, and artifact-download actions, installs no

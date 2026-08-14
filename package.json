@@ -5,7 +5,7 @@
   "description": "Provider-neutral roles, entitlements, and permissions for SaaS applications.",
   "license": "MIT",
   "type": "module",
-  "packageManager": "npm@11.18.0",
+  "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=22"
   },
@@ -14,12 +14,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "tsc -p tsconfig.check.json --pretty false && npm run docs:api:check",
+    "check": "tsc -p tsconfig.check.json --pretty false && pnpm run docs:api:check",
     "clean": "tsc -b --clean",
-    "docs:api": "npm run build && node scripts/api-docs.mjs",
-    "docs:api:check": "npm run build && node scripts/api-docs.mjs --check",
-    "example": "npm run build && node examples/reference-api/dist/reference-integration.js",
-    "example:serve": "npm run build && node examples/reference-api/dist/reference-integration.js --serve",
+    "docs:api": "pnpm run build && node scripts/api-docs.mjs",
+    "docs:api:check": "pnpm run build && node scripts/api-docs.mjs --check",
+    "example": "pnpm run build && node examples/reference-api/dist/reference-integration.js",
+    "example:serve": "pnpm run build && node examples/reference-api/dist/reference-integration.js --serve",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "release:check": "node scripts/release-packages.mjs check",
@@ -35,7 +35,7 @@
     "admin-bootstrap:registry:check": "node scripts/release-packages.mjs admin-bootstrap-registry-check",
     "entra-bootstrap:pack": "node scripts/release-packages.mjs entra-bootstrap-pack",
     "entra-bootstrap:registry:check": "node scripts/release-packages.mjs entra-bootstrap-registry-check",
-    "test": "npm run build && vitest run"
+    "test": "pnpm run build && vitest run"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

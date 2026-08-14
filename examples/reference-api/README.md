@@ -24,15 +24,15 @@ entry points. It uses Node's built-in HTTP server and demonstrates:
 From a clean clone with Node.js 22 or newer:
 
 ```sh
-npm ci
-npm run example
+pnpm install --frozen-lockfile
+pnpm run example
 ```
 
 That command runs the complete allow, deny, service-call, and replay scenario
 and exits. To leave the HTTP API listening on `http://127.0.0.1:3000`:
 
 ```sh
-npm run example:serve
+pnpm run example:serve
 ```
 
 Useful routes are:
