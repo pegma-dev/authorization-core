@@ -424,18 +424,20 @@ requires an approved valid SSH-signed annotated tag, and proves that the tag
 target, checkout, and GitHub release-event commit are identical. It rejects
 prereleases, a tag/version mismatch, a tag commit not contained in
 `origin/main`, a dirty or inconsistent package set, or changed tarball bytes.
-That job uses Node 24.18.0 and npm 11.18.0, runs the full gate without OIDC
-publication authority, and uploads the prepared directory with a recorded
-artifact digest.
+That job uses Node 24.18.0, the pinned pnpm 10.34.5, and the reviewed
+npm 11.18.0 for `npm pack` and clean-consumer install. It runs the full
+gate without OIDC publication authority, checks `pnpm-lock.yaml` against
+each manifest specifier and resolved version, and uploads the prepared
+directory with a recorded artifact digest.
 
 Only the minimal protected `npm-publish` job receives `id-token: write`. It
 runs pinned checkout, Node setup, and artifact-download actions, installs no
-dependencies, uses the reviewed Node 24.18.0 runtime whose bundled npm supports
-trusted publishing (npm 11.5.1 or newer), rechecks the event commit, manifest
-tag, and tarball hashes, then publishes contracts first, followed by the
-contracts-only consumers (Auth0, Entra, Identity, core, policy, Stripe),
-storage, and tokens. The downloaded Actions artifact also fails on a transport
-digest mismatch.
+project dependencies and does not download pnpm, uses the reviewed
+npm 11.18.0 for trusted publishing (npm 11.5.1 or newer), rechecks the
+event commit, manifest tag, and tarball hashes, then publishes contracts
+first, followed by the contracts-only consumers (Auth0, Entra, Identity,
+core, policy, Stripe), storage, and tokens. The downloaded Actions artifact
+also fails on a transport digest mismatch.
 
 Do not let `gh release create` create a tag, and do not move or recreate a
 release tag. If a release needs different bytes, prepare a new version.

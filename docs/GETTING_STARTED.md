@@ -9,8 +9,10 @@ The runnable [reference API](../examples/reference-api/README.md) is the
 shortest complete example. From a clean clone:
 
 ```sh
-npm ci
-npm run example
+npm install -g corepack
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run example
 ```
 
 ## Integration sequence

@@ -357,7 +357,7 @@ files.set(
       "",
       "# Public API reference",
       "",
-      "This reference is generated deterministically from the repository's declared public package entry points. Run `npm run docs:api` to regenerate it and `npm run docs:api:check` to detect drift.",
+      "This reference is generated deterministically from the repository's declared public package entry points. Run `pnpm run docs:api` to regenerate it and `pnpm run docs:api:check` to detect drift.",
       "",
       ...entries.map(([packageName]) => {
         const filename = documentationFilename(packageName);
@@ -436,7 +436,7 @@ if (checkOnly && drift.length > 0) {
   throw new Error(
     `Generated API documentation is out of date:\n${drift
       .map((file) => `- ${file}`)
-      .join("\n")}\nRun npm run docs:api.`,
+      .join("\n")}\nRun pnpm run docs:api.`,
   );
 }
 console.log(

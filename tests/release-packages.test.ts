@@ -11,6 +11,7 @@ import {
   decidePublication,
   parseArguments,
   releaseImportSpecifiers,
+  resolvedVersionMatchesSpecifier,
   validateAdminBootstrapRepository,
   validateEntraBootstrapRepository,
   validateIdentityBootstrapRepository,
@@ -72,6 +73,42 @@ describe("release package metadata", () => {
     await expect(validateRepository()).resolves.toMatchObject({
       version: "0.4.0",
     });
+  });
+
+  it("matches each lockfile dependency to its own specifier and resolved version", () => {
+    expect(resolvedVersionMatchesSpecifier("0.4.0", "link:../contracts")).toBe(
+      true,
+    );
+    expect(resolvedVersionMatchesSpecifier("0.4.0", "0.4.0")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^1.2.0", "1.2.3")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^26.1.1", "26.1.1")).toBe(true);
+    expect(
+      resolvedVersionMatchesSpecifier(
+        "^4.1.10",
+        "4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1))",
+      ),
+    ).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("'*'", "1.2.3")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("'1'", "1.0.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("'1'", "1")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("0.4.0", "999.0.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("^26.1.1", "999.0.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("0.4.0", undefined)).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("^0", "0.5.0")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0", "0.0.4")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0", "0.1.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("^0.0.3", "0.0.3")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0.3", "0.0.4")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("~0.0.3", "0.0.4")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("1.2.3", "1.2.3-beta.1")).toBe(
+      false,
+    );
+    expect(
+      resolvedVersionMatchesSpecifier("1.2.3-beta.1", "1.2.3-beta.1"),
+    ).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("1.2.3-beta.1", "1.2.3")).toBe(
+      false,
+    );
   });
 
   it("keeps the identity name-reservation bootstrap package-only and version-split", async () => {
@@ -430,10 +467,10 @@ describe("release source authentication", () => {
     const publish = jobs.slice(publishStart);
     expect(prepare).not.toContain("id-token: write");
     expect(publish).toContain("id-token: write");
-    expect(publish).not.toContain("npm ci");
-    expect(publish).not.toContain("npm run check");
-    expect(publish).not.toContain("npm test");
+    expect(publish).not.toContain("corepack");
+    expect(publish).not.toContain("pnpm");
     expect(publish).not.toContain("release:pack");
+    expect(publish).toContain("npm install --global npm@11.18.0");
     expect(publish).toContain("npm run release:publish");
     expect(workflow).not.toContain("identity-bootstrap");
     expect(workflow).not.toContain("github.run_attempt");

@@ -2,7 +2,7 @@
 
 # Public API reference
 
-This reference is generated deterministically from the repository's declared public package entry points. Run `npm run docs:api` to regenerate it and `npm run docs:api:check` to detect drift.
+This reference is generated deterministically from the repository's declared public package entry points. Run `pnpm run docs:api` to regenerate it and `pnpm run docs:api:check` to detect drift.
 
 - [`@pegma/authorization-admin`](authorization-admin.md)
 - [`@pegma/authorization-auth0`](authorization-auth0.md)

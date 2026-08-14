@@ -72,8 +72,10 @@ billing state, target-scoped roles, permission middleware, audited
 administration, safe logs, public JWKS, and one-use service grants:
 
 ```sh
-npm ci
-npm run example
+npm install -g corepack
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run example
 ```
 
 It is explicitly a non-production composition with synthetic provider inputs
@@ -348,14 +350,17 @@ authorization boundaries, compatibility effects, and safe staged migrations.
 
 ## Development
 
-Authorization Core requires Node.js 22 or newer.
+Authorization Core requires Node.js 22 or newer. Node 25 and newer do not
+bundle Corepack, so install it before enabling the pinned pnpm.
 
 ```sh
-npm ci
-npm run check
-npm test
-npm run format:check
-npm run docs:api:check
+npm install -g corepack
+corepack enable
+pnpm install --frozen-lockfile
+pnpm run check
+pnpm test
+pnpm run format:check
+pnpm run docs:api:check
 ```
 
 See the [project plan](docs/PROJECT_PLAN.md) for scope, architecture, milestones,

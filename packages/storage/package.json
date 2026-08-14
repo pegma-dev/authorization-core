@@ -31,6 +31,9 @@
     "@pegma/authorization-contracts": "0.4.0",
     "@pegma/storage-core": "0.4.0"
   },
+  "devDependencies": {
+    "@pegma/authorization-core": "0.4.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit"
