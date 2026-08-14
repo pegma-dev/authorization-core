@@ -263,6 +263,13 @@ const DEPENDENCY_SECTIONS = [
   "optionalDependencies",
   "peerDependencies",
 ];
+const LOCKFILE_IMPORTER_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+];
+const EXACT_PIN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 
 function fail(message) {
   throw new Error(message);
@@ -595,7 +602,7 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
   if (specifier === resolvedVersion) {
     return true;
   }
-  if (STABLE_SEMVER.test(specifier)) {
+  if (EXACT_PIN.test(specifier)) {
     return false;
   }
   const resolvedParts = STABLE_SEMVER.exec(resolvedVersion);
@@ -611,8 +618,20 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
   const caret = /^\^(\d+)(?:\.(\d+)(?:\.(\d+))?)?$/u.exec(specifier);
   if (caret !== null) {
     const specMajor = Number(caret[1]);
+    const hasMinor = caret[2] !== undefined;
+    const hasPatch = caret[3] !== undefined;
     const specMinor = Number(caret[2] ?? "0");
     const specPatch = Number(caret[3] ?? "0");
+    if (specMajor === 0 && !hasMinor) {
+      return resolvedMajor === 0;
+    }
+    if (specMajor === 0 && !hasPatch) {
+      return (
+        resolvedMajor === 0 &&
+        resolvedMinor === specMinor &&
+        resolvedPatch >= specPatch
+      );
+    }
     if (specMajor === 0 && specMinor === 0) {
       return (
         resolvedMajor === 0 &&
@@ -652,7 +671,7 @@ export function resolvedVersionMatchesSpecifier(specifier, resolved) {
 
 function lockfileSpecifierMap(importer) {
   const mapped = {};
-  for (const section of DEPENDENCY_SECTIONS) {
+  for (const section of LOCKFILE_IMPORTER_SECTIONS) {
     mapped[section] = Object.fromEntries(
       Object.entries(importer?.[section] ?? {}).map(([name, entry]) => [
         name,
@@ -664,7 +683,7 @@ function lockfileSpecifierMap(importer) {
 }
 
 function validateLockImporter(importer, manifest, version, location) {
-  for (const section of DEPENDENCY_SECTIONS) {
+  for (const section of LOCKFILE_IMPORTER_SECTIONS) {
     const expected = manifest[section] ?? {};
     const actual = importer?.[section] ?? {};
     if (!sameJson(Object.keys(expected).sort(), Object.keys(actual).sort())) {

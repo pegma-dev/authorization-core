@@ -94,6 +94,21 @@ describe("release package metadata", () => {
     expect(resolvedVersionMatchesSpecifier("0.4.0", "999.0.0")).toBe(false);
     expect(resolvedVersionMatchesSpecifier("^26.1.1", "999.0.0")).toBe(false);
     expect(resolvedVersionMatchesSpecifier("0.4.0", undefined)).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("^0", "0.5.0")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0", "0.0.4")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0", "0.1.0")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("^0.0.3", "0.0.3")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("^0.0.3", "0.0.4")).toBe(false);
+    expect(resolvedVersionMatchesSpecifier("~0.0.3", "0.0.4")).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("1.2.3", "1.2.3-beta.1")).toBe(
+      false,
+    );
+    expect(
+      resolvedVersionMatchesSpecifier("1.2.3-beta.1", "1.2.3-beta.1"),
+    ).toBe(true);
+    expect(resolvedVersionMatchesSpecifier("1.2.3-beta.1", "1.2.3")).toBe(
+      false,
+    );
   });
 
   it("keeps the identity name-reservation bootstrap package-only and version-split", async () => {
