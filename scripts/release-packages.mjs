@@ -680,7 +680,11 @@ function validatePackageBootstrapDependencies(bootstrap, manifest, location) {
       fail(`${location} must not declare ${section}`);
     }
   }
-  if (manifest.scripts?.prepack !== "pnpm run build") {
+  if (
+    manifest.scripts?.prepack !== manifest.scripts?.build ||
+    typeof manifest.scripts?.build !== "string" ||
+    manifest.scripts.build.length === 0
+  ) {
     fail(`${location} must build through its prepack script`);
   }
 }

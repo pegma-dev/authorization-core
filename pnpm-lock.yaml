@@ -8,6 +8,39 @@ importers:
 
   .:
     devDependencies:
+      '@pegma/authorization-admin':
+        specifier: 0.4.0
+        version: link:packages/admin
+      '@pegma/authorization-auth0':
+        specifier: 0.4.0
+        version: link:packages/auth0
+      '@pegma/authorization-contracts':
+        specifier: 0.4.0
+        version: link:packages/contracts
+      '@pegma/authorization-core':
+        specifier: 0.4.0
+        version: link:packages/core
+      '@pegma/authorization-entra':
+        specifier: 0.4.0
+        version: link:packages/entra
+      '@pegma/authorization-identity':
+        specifier: 0.4.0
+        version: link:packages/identity-link
+      '@pegma/authorization-policy':
+        specifier: 0.4.0
+        version: link:packages/policy
+      '@pegma/authorization-storage':
+        specifier: 0.4.0
+        version: link:packages/storage
+      '@pegma/authorization-stripe':
+        specifier: 0.4.0
+        version: link:packages/stripe
+      '@pegma/authorization-tokens':
+        specifier: 0.4.0
+        version: link:packages/tokens
+      '@pegma/storage-core':
+        specifier: 0.4.0
+        version: 0.4.0
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
@@ -32,6 +65,10 @@ importers:
       '@pegma/authorization-storage':
         specifier: 0.4.0
         version: link:../storage
+    devDependencies:
+      '@pegma/storage-core':
+        specifier: 0.4.0
+        version: 0.4.0
 
   packages/auth0:
     dependencies:
@@ -64,6 +101,10 @@ importers:
       '@pegma/authorization-contracts':
         specifier: 0.4.0
         version: link:../contracts
+    devDependencies:
+      '@pegma/authorization-core':
+        specifier: 0.4.0
+        version: link:../core
 
   packages/storage:
     dependencies:
@@ -73,6 +114,10 @@ importers:
       '@pegma/storage-core':
         specifier: 0.4.0
         version: 0.4.0
+    devDependencies:
+      '@pegma/authorization-core':
+        specifier: 0.4.0
+        version: link:../core
 
   packages/stripe:
     dependencies:

@@ -38,6 +38,17 @@
     "test": "pnpm run build && vitest run"
   },
   "devDependencies": {
+    "@pegma/authorization-admin": "0.4.0",
+    "@pegma/authorization-auth0": "0.4.0",
+    "@pegma/authorization-contracts": "0.4.0",
+    "@pegma/authorization-core": "0.4.0",
+    "@pegma/authorization-entra": "0.4.0",
+    "@pegma/authorization-identity": "0.4.0",
+    "@pegma/authorization-policy": "0.4.0",
+    "@pegma/authorization-storage": "0.4.0",
+    "@pegma/authorization-stripe": "0.4.0",
+    "@pegma/authorization-tokens": "0.4.0",
+    "@pegma/storage-core": "0.4.0",
     "@types/node": "^26.1.1",
     "fast-check": "^4.9.0",
     "prettier": "^3.9.6",
