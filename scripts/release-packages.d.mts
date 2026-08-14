@@ -138,3 +138,8 @@ export function decidePublication(
   localIntegrity: string,
   registryIntegrity: string | null,
 ): "publish" | "skip";
+
+export function resolvedVersionMatchesSpecifier(
+  specifier: string,
+  resolved: string | undefined,
+): boolean;
