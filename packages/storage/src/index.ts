@@ -119,8 +119,16 @@ export interface RoleHolderReader {
    * an at-least-one invariant still needs the re-verify-after-commit
    * treatment in `docs/STORAGE.md`.
    *
-   * An empty array means definitive emptiness. Implementations reject
-   * partial, operationally failed, or corrupt results.
+   * Implementations must verify every reported assignment against the
+   * authoritative lifecycle record; an unverified secondary-index read is
+   * not conforming, because a stale row would count a revoked holder.
+   *
+   * An empty array means definitive emptiness once the index covers every
+   * stored assignment. For the provided adapters that holds after
+   * `rebuildRoleHolderIndex` has run once over a store that holds grants
+   * made before the index existed; until then an empty result can omit
+   * those grants. Implementations reject partial, operationally failed, or
+   * corrupt results.
    */
   readonly listActiveRoleAssignmentsByRole: (
     role: RoleName,

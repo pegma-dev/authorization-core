@@ -734,6 +734,58 @@ describe("store-maintained by-role index", () => {
     ).toBe(false);
   });
 
+  it("re-verifies a store's by-role answer before counting a holder", async () => {
+    const store = createRoleStore(createMemoryStore(), "admin-tests");
+    await seed(store, bob, "seed-bob");
+    await seed(store, carol, "seed-carol");
+    const carolSnapshot = (
+      await store.listActiveRoleAssignmentsByRole(ADMIN, APPLICATION)
+    ).filter(({ principalId }) => principalId === carol);
+    const carolRecord = await store.getRoleAssignment("seed-carol");
+    await store.revokeRoleAssignmentWithAudit({
+      assignmentId: "seed-carol",
+      expectedConcurrencyToken: carolRecord!.concurrencyToken,
+      revokedBy: operator,
+      revokedAtEpochMs: 2,
+      auditEventId: "evt-revoke-carol",
+    });
+    // A non-conforming store that keeps reporting the revoked holder.
+    const administration = createRoleAdministration({
+      store: {
+        ...store,
+        listActiveRoleAssignmentsByRole: async (role, scope) => [
+          ...(await store.listActiveRoleAssignmentsByRole(role, scope)),
+          ...carolSnapshot,
+        ],
+      },
+      policy: { administratorRole: ADMIN },
+    });
+    expect(
+      await administration.revokeRole({
+        assignmentId: "seed-bob",
+        actor: operator,
+      }),
+    ).toEqual({ status: "last_administrator" });
+  });
+
+  it("treats a null holderIndex as absent and rejects a malformed one", () => {
+    const store = createRoleStore(createMemoryStore(), "admin-tests");
+    expect(() =>
+      createRoleAdministration({
+        store,
+        holderIndex: null,
+        policy: { administratorRole: ADMIN },
+      } as never),
+    ).not.toThrow();
+    expect(() =>
+      createRoleAdministration({
+        store,
+        holderIndex: { record: "not a function" },
+        policy: { administratorRole: ADMIN },
+      } as never),
+    ).toThrow(TypeError);
+  });
+
   it("refuses construction when neither index is available", () => {
     const store = createRoleStore(createMemoryStore(), "admin-tests");
     const { listActiveRoleAssignmentsByRole: _omitted, ...withoutByRole } =

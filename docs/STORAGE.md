@@ -118,8 +118,19 @@ The provided adapters maintain the index themselves, following the recipe
 below: every audited grant writes an immutable holder row (partitioned by
 application, role, and exact scope) before the grant transaction, rows are
 never deleted, and every read verifies each row against the authoritative
-lifecycle record. A revoked assignment or a refused grant leaves a row that
-reads as nothing; a stored assignment is never missed.
+lifecycle record. A revoked assignment, or a grant refused after the pointer
+check (an occupied tuple or a different event ID), leaves a row that reads as
+nothing; a grant refused at the pointer check writes no row; a stored
+assignment is never missed.
+
+Each audited grant therefore costs one more `insertIfAbsent` than before,
+outside the grant transaction. Each by-role read is one partition listing plus
+one authoritative point read per row, issued in batches of 16. Because rows
+are never deleted, the partition grows with every grant attempt for that role
+and scope, including revoked and refused ones, so read cost tracks a role's
+whole grant history rather than its current holders. That is the right trade
+for administrator-style roles granted a handful of times; a role granted
+routinely to large populations is a poor fit for by-role reads.
 
 Assignments granted before the index existed (before this release) have no
 row. Until `RoleHolderIndexMaintenance.rebuildRoleHolderIndex()` runs once
@@ -246,7 +257,7 @@ complete audit history.
 
 ## Record layout
 
-`createRoleStore(store, applicationId)` binds three declared collections to one
+`createRoleStore(store, applicationId)` binds four declared collections to one
 `Store` and one host application.
 
 `authorization_records` holds everything about one principal in one exact
@@ -278,6 +289,14 @@ assignment's location is fixed at grant and an ID is never reused — so it is
 written with `insertIfAbsent` before the grant transaction rather than inside
 it. A pointer that resolves to nothing reads as absence, which the port already
 treats as definitive.
+
+`authorization_role_holders` is the by-role index. Its partition is
+`applicationId|role|scopeTag` and each record ID is the encoded assignment ID;
+a row carries the assignment's principal, scope, and role. Like a pointer, a
+row is immutable and written with `insertIfAbsent` before the grant
+transaction, after the pointer check, and it is never deleted. A host whose
+`Store` provisions storage per collection name must provision this one before
+upgrading.
 
 `authorization_identity_links` maps one exact issuer-and-subject tuple to a
 principal. Issuer and subject are stored raw as well as encoded into the record
@@ -328,7 +347,7 @@ partition and would therefore leave the transaction boundary.
 ## Non-snapshot reads
 
 `listActiveRoleAssignments` and `listRoleAssignments` are each one partition
-read of the authoritative assignment records. There is no derived selection
+read of the authoritative assignment records. They use no derived selection
 index and no fence to compare, so there is nothing that can drift from the
 records or that would need reconciling; but a partition listing is not a
 snapshot, and a read that begins before a revocation may still observe the
@@ -346,8 +365,8 @@ deadline, exact binding, invalidation, and stale-fill rules in that guide.
 
 `createInMemoryStorageAdapter` is `createRoleStore` over the storage-core
 in-process memory store, bound to one application namespace. It implements
-exact principal lookup, identity link writes, role reads, audit reads, and
-combined audited grants and revocations. Its returned object deliberately has
+exact principal lookup, identity link writes, role reads, by-role reads and
+index rebuild, audit reads, and combined audited grants and revocations. Its returned object deliberately has
 no
 `createRoleAssignment`, raw `revokeRoleAssignment` signature, or
 `appendRoleAssignmentAuditEvent` capability outside the combined command

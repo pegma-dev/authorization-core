@@ -93,6 +93,11 @@ the common case, and the recovery is documented rather than implied.
 an ordered event timeline. No host index involvement; pre-index grants
 appear because the store is the authority.
 
+**Guard verification.** Whichever index supplies the candidates — the
+store's `RoleHolderReader` or a host index — the service re-reads each one
+by exact ID before it counts, so a store whose by-role read is stale can
+still only make the guard refuse.
+
 **One-time seed helper.** Both hosts wrote the same bootstrap-adjacent
 function; the third copy would be in this package's README, so it belongs
 in the package: `ensureSeededAssignment` grants a role once per principal,
@@ -146,9 +151,11 @@ Tenth package. Same rules as the eighth and ninth: implementation lands
 with conformance-style tests against the memory store; the one-time `0.0.0`
 name reservation publishes under the non-default `bootstrap` dist-tag;
 trusted publishing is configured; the next synchronized `0.x` release is
-its first advertised publication. No new storage: every durable record it
-touches is either the existing authorization collections or the host's own
-index collection reached through the port.
+its first advertised publication. The package declares no storage of its
+own: every durable record it touches is either the authorization collections
+`createRoleStore` declares (including the library-maintained
+`authorization_role_holders` index) or the host's own index collection
+reached through the port.
 
 ## Host adoption order (recorded, executed in the host repos)
 

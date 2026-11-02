@@ -111,7 +111,12 @@ Options for {@link ensureSeededAssignment}.
 ```ts
 export interface EnsureSeededAssignmentOptions {
   readonly store: RoleAdministrationStore;
-  /** When provided, the superset row is recorded before the grant. */
+  /**
+   * The host's own by-role index, when it keeps one: the superset row is
+   * recorded before the grant. Omit it when the store maintains the
+   * library's index (`createRoleStore` does) — the store records its own row
+   * on every audited grant, so a host index would only be a second copy.
+   */
   readonly holderIndex?: RoleHolderIndex;
   readonly principalId: PrincipalId;
   readonly role: RoleName;
@@ -230,6 +235,22 @@ export interface RoleAdministration {
 }
 ```
 
+## RoleAdministrationCommonOptions
+
+**Kind:** interface
+
+Options shared by both {@link RoleAdministrationOptions} shapes.
+
+```ts
+export interface RoleAdministrationCommonOptions {
+  readonly policy: RoleManagementPolicy;
+  /** Epoch-milliseconds clock; injectable for deterministic tests. */
+  readonly now?: () => number;
+  /** Fresh opaque id source for grants and audit events. */
+  readonly generateId?: () => string;
+}
+```
+
 ## RoleAdministrationEvent
 
 **Kind:** interface
@@ -264,7 +285,7 @@ export type RoleAdministrationOptions = RoleAdministrationCommonOptions &
   (
     | {
         readonly store: RoleHolderAwareAdministrationStore;
-        readonly holderIndex?: undefined;
+        readonly holderIndex?: RoleHolderIndex | undefined;
       }
     | {
         readonly store: RoleAdministrationStore;

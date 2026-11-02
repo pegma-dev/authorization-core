@@ -18,7 +18,16 @@ remaining storage ask from issue #24:
 
 `@pegma/authorization-admin` no longer requires a host `holderIndex` when its
 store implements `RoleHolderReader`. Hosts that pass a `holderIndex` keep
-today's behavior exactly; the store's index is used only when none is given.
+the same guard decisions; the store's index is used only when none is given.
+The guard re-verifies every candidate by exact ID whichever index supplied it.
+
+Two costs reach every host using `createRoleStore`, including hosts that keep
+their own `holderIndex`: `createRoleStore` declares a fourth collection,
+`authorization_role_holders`, so a `Store` implementation that provisions
+storage per collection name must provision it before upgrading; and every
+audited grant performs one additional `insertIfAbsent`. By-role read cost
+grows with a role's whole grant history; `docs/STORAGE.md` describes the
+shape.
 
 A first-class concurrency-safe last-administrator guard primitive remains
 declined: the admin service's serialize, re-verify, and compensate treatment

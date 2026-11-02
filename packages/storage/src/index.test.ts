@@ -732,6 +732,33 @@ describe("by-role selection", () => {
     ).resolves.toMatchObject([{ id: "other" }, { id: "regrant" }]);
   });
 
+  it("verifies every row when a role has more rows than one batch", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const granted = [];
+    for (let index = 0; index < 40; index += 1) {
+      granted.push(
+        await requireGrant(
+          adapter,
+          admin(
+            `admin-${String(index).padStart(2, "0")}`,
+            `principal_${index}`,
+          ),
+        ),
+      );
+    }
+    for (const record of granted.filter((_, index) => index % 2 === 1)) {
+      await revoke(adapter, record);
+    }
+    const holders = await adapter.listActiveRoleAssignmentsByRole(
+      "admin",
+      applicationScope,
+    );
+    expect(holders).toHaveLength(20);
+    expect(holders.every(({ id }) => Number(id.slice(-2)) % 2 === 0)).toBe(
+      true,
+    );
+  });
+
   it("never reports a refused grant whose index row was written", async () => {
     const adapter = createInMemoryStorageAdapter();
     await requireGrant(adapter, admin("held", "principal_alpha"));

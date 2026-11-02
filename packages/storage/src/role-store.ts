@@ -152,6 +152,9 @@ const freezeAuditRecord = (
   return Object.freeze(record);
 };
 
+/** Authoritative point reads issued concurrently by one by-role read. */
+const HOLDER_VERIFY_BATCH = 16;
+
 const byGrantThenId = (left: RoleAssignment, right: RoleAssignment): number =>
   left.grantedAtEpochMs !== right.grantedAtEpochMs
     ? left.grantedAtEpochMs - right.grantedAtEpochMs
@@ -435,33 +438,44 @@ export const createRoleStore = (
       const candidates = await holders.list(
         roleHolderPartition(applicationId, role, exact),
       );
-      const verified = await Promise.all(
-        candidates.map(async (candidate) => {
-          if (candidate.role !== role || !scopesEqual(candidate.scope, exact)) {
-            throw corrupt(`a ${role} holder row disagrees with its partition`);
-          }
-          // Rows are candidates only. A row whose grant was refused has no
-          // lifecycle behind it and reads as nothing.
-          const current = await readAssignment(
-            candidate,
-            candidate.assignmentId,
+      const verify = async (
+        candidate: (typeof candidates)[number],
+      ): Promise<ActiveRoleAssignment | null> => {
+        if (candidate.role !== role || !scopesEqual(candidate.scope, exact)) {
+          throw corrupt(`a ${role} holder row disagrees with its partition`);
+        }
+        // Rows are candidates only. A row whose grant was refused has no
+        // lifecycle behind it and reads as nothing.
+        const current = await readAssignment(candidate, candidate.assignmentId);
+        if (current === null) {
+          return null;
+        }
+        const assignment = current.stored.assignment;
+        if (
+          assignment.principalId !== candidate.principalId ||
+          assignment.role !== role ||
+          !scopesEqual(assignment.scope, exact)
+        ) {
+          throw corrupt(
+            `${candidate.assignmentId} disagrees with its holder row`,
           );
-          if (current === null) {
-            return null;
-          }
-          const assignment = current.stored.assignment;
-          if (
-            assignment.principalId !== candidate.principalId ||
-            assignment.role !== role ||
-            !scopesEqual(assignment.scope, exact)
-          ) {
-            throw corrupt(
-              `${candidate.assignmentId} disagrees with its holder row`,
-            );
-          }
-          return assignment.status === "active" ? assignment : null;
-        }),
-      );
+        }
+        return assignment.status === "active" ? assignment : null;
+      };
+      // Bounded fan-out: the partition keeps every historical row, so verify
+      // in fixed-size batches rather than one unbounded burst of point reads.
+      const verified: (ActiveRoleAssignment | null)[] = [];
+      for (
+        let start = 0;
+        start < candidates.length;
+        start += HOLDER_VERIFY_BATCH
+      ) {
+        verified.push(
+          ...(await Promise.all(
+            candidates.slice(start, start + HOLDER_VERIFY_BATCH).map(verify),
+          )),
+        );
+      }
       return Object.freeze(
         verified
           .filter(
