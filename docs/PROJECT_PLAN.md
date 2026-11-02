@@ -788,6 +788,14 @@ candidate), and a first-class concurrency-safe guard primitive, declined for
 now because records for different principals live in different partitions and
 the single-partition transaction boundary cannot honestly promise it.
 
+**Library-maintained by-role index (2026-11-02):** the first #24 follow-up
+landed. `RoleHolderReader.listActiveRoleAssignmentsByRole` is a separate,
+optional port; `createRoleStore` maintains the `authorization_role_holders`
+index with the recipe's write-before-grant, never-delete, verify-on-read
+shape, and `rebuildRoleHolderIndex` backfills grants made before it existed.
+The admin service's host `holderIndex` becomes optional. The first-class
+guard primitive remains declined for the reason above.
+
 **Administration-surface extraction (2026-07-30, design under review):** with
 both reference hosts having independently built the same audited
 role-management surface, the extract-on-second-consumer trigger is met.

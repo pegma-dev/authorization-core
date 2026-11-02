@@ -219,6 +219,8 @@ export interface InMemoryStorageAdapter
   extends
     IdentityLinkStore,
     RoleAssignmentReader,
+    RoleHolderReader,
+    RoleHolderIndexMaintenance,
     RoleAssignmentAuditReader,
     AuditedRoleAssignmentMutationStore {}
 ```
@@ -267,6 +269,19 @@ operational failures, incomplete reads, and corrupt records.
 
 ```ts
 export interface PrincipalLookupStore extends IdentityAdapter<IdentityLinkKey> {}
+```
+
+## RebuildRoleHolderIndexResult
+
+**Kind:** interface
+
+Result of one by-role index rebuild.
+
+```ts
+export interface RebuildRoleHolderIndexResult {
+  /** Index rows written by this run; rows already present are not counted. */
+  readonly recorded: number;
+}
 ```
 
 ## RevokeRoleAssignmentCommand
@@ -457,6 +472,67 @@ export interface RoleAssignmentStore extends RoleAssignmentReader {
   readonly revokeRoleAssignment: (
     command: RevokeRoleAssignmentCommand,
   ) => Promise<RevokeRoleAssignmentResult>;
+}
+```
+
+## RoleHolderIndexMaintenance
+
+**Kind:** interface
+
+Maintenance for the library-maintained by-role index.
+
+Grants made through this version and later maintain the index themselves.
+Assignments granted by an earlier version have no index row until
+`rebuildRoleHolderIndex` runs once over the backing store. It is
+idempotent and safe to run concurrently with grants and revocations.
+
+```ts
+export interface RoleHolderIndexMaintenance {
+  readonly rebuildRoleHolderIndex: () => Promise<RebuildRoleHolderIndexResult>;
+}
+```
+
+## RoleHolderReader
+
+**Kind:** interface
+
+Cross-principal by-role selection.
+
+Separate from {@link RoleAssignmentReader} so hosts that implement the
+storage ports themselves are not required to provide it. Role
+administration surfaces use it to answer "who holds role R in this scope",
+including the last-administrator guard's "does another active holder
+exist".
+
+```ts
+export interface RoleHolderReader {
+  /**
+   * Every active assignment of one role in one exact scope, across
+   * principals, ordered by `grantedAtEpochMs` ascending and then by
+   * assignment ID code-unit order.
+   *
+   * Every result is verified against the authoritative lifecycle record, so
+   * a revoked or refused assignment is never reported as active. Like the
+   * per-principal listings this is a non-snapshot read: a concurrent grant or
+   * revoke in another principal's partition may or may not be reflected, so
+   * an at-least-one invariant still needs the re-verify-after-commit
+   * treatment in `docs/STORAGE.md`.
+   *
+   * Implementations must verify every reported assignment against the
+   * authoritative lifecycle record; an unverified secondary-index read is
+   * not conforming, because a stale row would count a revoked holder.
+   *
+   * An empty array means definitive emptiness once the index covers every
+   * stored assignment. For the provided adapters that holds after
+   * `rebuildRoleHolderIndex` has run once over a store that holds grants
+   * made before the index existed; until then an empty result can omit
+   * those grants. Implementations reject partial, operationally failed, or
+   * corrupt results.
+   */
+  readonly listActiveRoleAssignmentsByRole: (
+    role: RoleName,
+    scope: RoleAssignmentScope,
+  ) => Promise<readonly ActiveRoleAssignment[]>;
 }
 ```
 

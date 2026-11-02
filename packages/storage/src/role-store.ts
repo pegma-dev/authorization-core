@@ -25,8 +25,11 @@ import {
   identityLinkKey,
   identityLinks as identityLinkCollection,
   pointerKey,
+  pointerPartition,
   recordPartition,
   REVOKE_SEQUENCE,
+  roleHolderPartition,
+  roleHolders,
   tupleRecordId,
   type ApplicationId,
   type AuthorizationRecord,
@@ -44,6 +47,7 @@ import type {
   InMemoryStorageAdapter,
   InMemoryStorageAdapterOptions,
   LinkIdentityResult,
+  RebuildRoleHolderIndexResult,
   SequencedRoleAssignmentAuditEvent,
   VersionedRoleAssignment,
 } from "./index.js";
@@ -147,6 +151,18 @@ const freezeAuditRecord = (
   Object.freeze(record.event);
   return Object.freeze(record);
 };
+
+/** Authoritative point reads issued concurrently by one by-role read. */
+const HOLDER_VERIFY_BATCH = 16;
+
+const byGrantThenId = (left: RoleAssignment, right: RoleAssignment): number =>
+  left.grantedAtEpochMs !== right.grantedAtEpochMs
+    ? left.grantedAtEpochMs - right.grantedAtEpochMs
+    : left.id < right.id
+      ? -1
+      : left.id > right.id
+        ? 1
+        : 0;
 
 const scopesEqual = (
   left: RoleAssignmentScope,
@@ -281,6 +297,7 @@ export const createRoleStore = (
   const records = store.collection(authorizationRecords);
   const pointers = store.collection(assignmentPointers);
   const links = store.collection(identityLinkCollection);
+  const holders = store.collection(roleHolders);
 
   const locate = async (
     assignmentId: RoleAssignmentId,
@@ -408,17 +425,92 @@ export const createRoleStore = (
               record.kind === "assignment",
           )
           .map(({ assignment }) => assignment)
-          .sort((left, right) =>
-            left.grantedAtEpochMs !== right.grantedAtEpochMs
-              ? left.grantedAtEpochMs - right.grantedAtEpochMs
-              : left.id < right.id
-                ? -1
-                : left.id > right.id
-                  ? 1
-                  : 0,
-          )
+          .sort(byGrantThenId)
           .map((assignment) => freezeAssignment(assignment)),
       );
+    },
+
+    async listActiveRoleAssignmentsByRole(
+      role: RoleName,
+      scope: RoleAssignmentScope,
+    ): Promise<readonly ActiveRoleAssignment[]> {
+      const exact = snapshotScope(scope);
+      const candidates = await holders.list(
+        roleHolderPartition(applicationId, role, exact),
+      );
+      const verify = async (
+        candidate: (typeof candidates)[number],
+      ): Promise<ActiveRoleAssignment | null> => {
+        if (candidate.role !== role || !scopesEqual(candidate.scope, exact)) {
+          throw corrupt(`a ${role} holder row disagrees with its partition`);
+        }
+        // Rows are candidates only. A row whose grant was refused has no
+        // lifecycle behind it and reads as nothing.
+        const current = await readAssignment(candidate, candidate.assignmentId);
+        if (current === null) {
+          return null;
+        }
+        const assignment = current.stored.assignment;
+        if (
+          assignment.principalId !== candidate.principalId ||
+          assignment.role !== role ||
+          !scopesEqual(assignment.scope, exact)
+        ) {
+          throw corrupt(
+            `${candidate.assignmentId} disagrees with its holder row`,
+          );
+        }
+        return assignment.status === "active" ? assignment : null;
+      };
+      // Bounded fan-out: the partition keeps every historical row, so verify
+      // in fixed-size batches rather than one unbounded burst of point reads.
+      const verified: (ActiveRoleAssignment | null)[] = [];
+      for (
+        let start = 0;
+        start < candidates.length;
+        start += HOLDER_VERIFY_BATCH
+      ) {
+        verified.push(
+          ...(await Promise.all(
+            candidates.slice(start, start + HOLDER_VERIFY_BATCH).map(verify),
+          )),
+        );
+      }
+      return Object.freeze(
+        verified
+          .filter(
+            (assignment): assignment is ActiveRoleAssignment =>
+              assignment !== null,
+          )
+          .sort(byGrantThenId)
+          .map((assignment) => freezeAssignment(assignment)),
+      );
+    },
+
+    async rebuildRoleHolderIndex(): Promise<RebuildRoleHolderIndexResult> {
+      // Every assignment ever granted has a pointer, and pointers already
+      // carry the location and role a holder row needs.
+      const known = await pointers.list(pointerPartition(applicationId));
+      let recorded = 0;
+      for (const pointer of known) {
+        if (pointer.applicationId !== applicationId) {
+          throw corrupt(`${pointer.assignmentId} points outside its namespace`);
+        }
+        if ((await readAssignment(pointer, pointer.assignmentId)) === null) {
+          continue;
+        }
+        const written = await holders.insertIfAbsent({
+          applicationId,
+          principalId: pointer.principalId,
+          scope: pointer.scope,
+          assignmentId: pointer.assignmentId,
+          role: pointer.role,
+        });
+        if (written.inserted) {
+          recorded += 1;
+        }
+      }
+      return Object.freeze({ recorded });
     },
 
     async listRoleAssignmentAuditEvents(
@@ -488,6 +580,14 @@ export const createRoleStore = (
       ) {
         return conflict("assignment_id");
       }
+
+      // Written before the grant, never deleted: the by-role index may
+      // over-report a refused grant but can never miss a stored one.
+      await holders.insertIfAbsent({
+        ...location,
+        assignmentId: assignment.id,
+        role: assignment.role,
+      });
 
       const guard = await records.getVersioned({
         partition,

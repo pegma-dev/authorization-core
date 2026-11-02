@@ -1,3 +1,38 @@
+# Unreleased
+
+`@pegma/authorization-storage` gains a library-maintained by-role index, the
+remaining storage ask from issue #24:
+
+- `RoleHolderReader.listActiveRoleAssignmentsByRole(role, scope)` lists every
+  active assignment of one role in one exact scope across principals, ordered
+  by grant time and then assignment ID. Each result is verified against the
+  authoritative lifecycle record. It is a new, separate port, so hosts that
+  implement `RoleAssignmentReader` themselves are unaffected.
+- `createRoleStore` and the in-memory adapter maintain the index on every
+  audited grant using the superset recipe from `docs/STORAGE.md` (write
+  before grant, never delete, verify on read).
+- `RoleHolderIndexMaintenance.rebuildRoleHolderIndex()` backfills rows for
+  assignments granted before this release. Durable deployments should run it
+  once after upgrading; until then those assignments are missing from by-role
+  results, which makes a last-administrator guard refuse rather than allow.
+
+`@pegma/authorization-admin` no longer requires a host `holderIndex` when its
+store implements `RoleHolderReader`. Hosts that pass a `holderIndex` keep
+the same guard decisions; the store's index is used only when none is given.
+The guard re-verifies every candidate by exact ID whichever index supplied it.
+
+Two costs reach every host using `createRoleStore`, including hosts that keep
+their own `holderIndex`: `createRoleStore` declares a fourth collection,
+`authorization_role_holders`, so a `Store` implementation that provisions
+storage per collection name must provision it before upgrading; and every
+audited grant performs one additional `insertIfAbsent`. By-role read cost
+grows with a role's whole grant history; `docs/STORAGE.md` describes the
+shape.
+
+A first-class concurrency-safe last-administrator guard primitive remains
+declined: the admin service's serialize, re-verify, and compensate treatment
+is still the documented answer.
+
 # Authorization Core 0.4.0
 
 Authorization Core 0.4.0 first advertises `@pegma/authorization-admin`, the
