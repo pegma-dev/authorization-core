@@ -103,12 +103,41 @@ authoritative records.
 
 ### By-role selection across principals
 
-Neither listing crosses principals. Records are partitioned by principal and
-scope so both listings are one-partition reads, which means "every active
-holder of role R" has no partition to read and no supported query. A host that
-needs it — a role-administration panel, or a last-administrator guard refusing
-to revoke the final active `Admin` — must maintain a secondary index, and the
-index must fail in the safe direction:
+Neither per-principal listing crosses principals. Records are partitioned by
+principal and scope so both listings are one-partition reads, which leaves
+"every active holder of role R" without a partition of its own.
+
+`RoleHolderReader.listActiveRoleAssignmentsByRole(role, scope)` answers it.
+It returns every active assignment of one role in one exact scope, across
+principals, ordered by `grantedAtEpochMs` ascending and then by assignment ID.
+It is a separate port from `RoleAssignmentReader`, so hosts that implement the
+storage ports themselves are not required to provide it; `createRoleStore`
+and the in-memory adapter both do.
+
+The provided adapters maintain the index themselves, following the recipe
+below: every audited grant writes an immutable holder row (partitioned by
+application, role, and exact scope) before the grant transaction, rows are
+never deleted, and every read verifies each row against the authoritative
+lifecycle record. A revoked assignment or a refused grant leaves a row that
+reads as nothing; a stored assignment is never missed.
+
+Assignments granted before the index existed (before this release) have no
+row. Until `RoleHolderIndexMaintenance.rebuildRoleHolderIndex()` runs once
+over the backing store, they are missing from by-role results, which a
+last-administrator guard sees as "no other holder" and refuses — fail closed,
+but still a refusal an operator would notice. The rebuild reads the
+application's assignment pointers (a single-partition scan), writes any
+missing rows, reports how many it wrote, and is idempotent and safe to run
+alongside live grants and revocations.
+
+The by-role read is a non-snapshot read like every other listing, so the
+concurrency caveat below still applies to at-least-one invariants.
+
+#### Recipe for a host-maintained index
+
+A host that implements the storage ports itself, or that predates the
+library-maintained index, can keep its own secondary index. It must fail in
+the safe direction:
 
 1. Write the index entry **before** the audited grant, so the index can only
    over-report, never under-report. A grant refused after its index entry was
@@ -122,8 +151,10 @@ closed. The check itself is still a non-snapshot read: a guard that verifies
 "another active holder exists" and then revokes can race a concurrent
 revocation of that other holder. A host enforcing an at-least-one invariant
 must re-verify after its own revocation commits and compensate — regrant under
-a fresh assignment ID — when the invariant was lost. Whether this index becomes
-a library-maintained structure is tracked as Phase 6 integration feedback.
+a fresh assignment ID — when the invariant was lost. The library-maintained
+index above follows exactly this recipe; a first-class concurrency-safe guard
+primitive remains declined, because the single-partition transaction boundary
+cannot make a cross-principal invariant atomic.
 
 ## Atomic create
 

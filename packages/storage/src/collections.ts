@@ -361,10 +361,68 @@ export function pointerKey(
   assignmentId: RoleAssignmentId,
 ): EntityKey {
   return {
-    partition: encodeSegment(applicationId),
+    partition: pointerPartition(applicationId),
     id: encodeSegment(assignmentId),
   };
 }
+
+/** Partition holding every assignment pointer for one host application. */
+export function pointerPartition(applicationId: ApplicationId): string {
+  return encodeSegment(applicationId);
+}
+
+/**
+ * One candidate holder of one role in one exact scope.
+ *
+ * Records are partitioned by principal, so "every holder of role R" has no
+ * partition of its own. This collection supplies one, under the superset
+ * discipline `docs/STORAGE.md` describes: a row is written before the grant it
+ * describes and is never deleted, so the index can over-report (a refused
+ * grant, a revoked assignment) but never under-report a stored assignment.
+ * Readers treat every row as a candidate and verify it against the
+ * authoritative lifecycle record before reporting it.
+ *
+ * Like a pointer, a row is immutable: the location and role of an assignment
+ * id are fixed at grant, so the row can be written outside the partition
+ * transaction.
+ */
+export interface StoredRoleHolder extends RecordLocation {
+  readonly assignmentId: RoleAssignmentId;
+  readonly role: RoleName;
+}
+
+/** Partition holding every candidate holder of one role in one exact scope. */
+export function roleHolderPartition(
+  applicationId: ApplicationId,
+  role: RoleName,
+  scope: RoleAssignmentScope,
+): string {
+  return `${joinSegments([applicationId, role])}|${scopeTag(scope)}`;
+}
+
+export const roleHolders = defineCollection<StoredRoleHolder>({
+  name: "authorization_role_holders",
+  key: (holder) => ({
+    partition: roleHolderPartition(
+      holder.applicationId,
+      holder.role,
+      holder.scope,
+    ),
+    id: encodeSegment(holder.assignmentId),
+  }),
+  codec: {
+    encode: (holder) => ({
+      ...encodeLocation(holder),
+      assignmentId: holder.assignmentId,
+      role: holder.role,
+    }),
+    decode: (record) => ({
+      ...decodeLocation(record),
+      assignmentId: String(record["assignmentId"]),
+      role: String(record["role"]),
+    }),
+  },
+});
 
 /**
  * Provider identity linked to a host principal.

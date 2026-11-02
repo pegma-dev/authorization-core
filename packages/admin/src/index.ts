@@ -18,6 +18,7 @@ import type {
 import type {
   AuditedRoleAssignmentMutationStore,
   RoleAssignmentReader,
+  RoleHolderReader,
   VersionedRoleAssignment,
 } from "@pegma/authorization-storage";
 
@@ -31,6 +32,14 @@ export interface RoleHolderIndexRow {
   readonly assignmentId: string;
   readonly role: RoleName;
 }
+
+/**
+ * A store that also maintains the library's by-role index
+ * (`createRoleStore` and `createInMemoryStorageAdapter` both do). With one,
+ * the service needs no host-provided {@link RoleHolderIndex}.
+ */
+export interface RoleHolderAwareAdministrationStore
+  extends RoleAdministrationStore, RoleHolderReader {}
 
 /**
  * The host-provided by-role index (`docs/STORAGE.md` recipe): rows are
@@ -129,16 +138,34 @@ export type RevokeRoleResult =
   | Readonly<{ readonly status: "last_administrator" }>
   | Readonly<{ readonly status: "conflict" }>;
 
-/** Constructor options for {@link createRoleAdministration}. */
-export interface RoleAdministrationOptions {
-  readonly store: RoleAdministrationStore;
-  readonly holderIndex: RoleHolderIndex;
+interface RoleAdministrationCommonOptions {
   readonly policy: RoleManagementPolicy;
   /** Epoch-milliseconds clock; injectable for deterministic tests. */
   readonly now?: () => number;
   /** Fresh opaque id source for grants and audit events. */
   readonly generateId?: () => string;
 }
+
+/**
+ * Constructor options for {@link createRoleAdministration}.
+ *
+ * Either the store maintains the by-role index itself (preferred), or the
+ * host supplies a {@link RoleHolderIndex}. When a `holderIndex` is given it
+ * is used even if the store could answer by-role queries, so upgrading the
+ * storage package never silently changes which index an existing host's
+ * guard trusts.
+ */
+export type RoleAdministrationOptions = RoleAdministrationCommonOptions &
+  (
+    | {
+        readonly store: RoleHolderAwareAdministrationStore;
+        readonly holderIndex?: undefined;
+      }
+    | {
+        readonly store: RoleAdministrationStore;
+        readonly holderIndex: RoleHolderIndex;
+      }
+  );
 
 /** The administration service. One instance per application; host-gated. */
 export interface RoleAdministration {
@@ -274,16 +301,51 @@ function sameScope(
 export function createRoleAdministration(
   options: RoleAdministrationOptions,
 ): RoleAdministration {
-  const { store, holderIndex, policy } = options;
+  const { store, policy } = options;
+  const holderIndex = options.holderIndex;
   const now = options.now ?? (() => Date.now());
   const generateId = options.generateId ?? (() => crypto.randomUUID());
+
+  // Narrowed once: the options union guarantees the store answers by-role
+  // reads whenever the host supplies no index, and JavaScript callers get a
+  // construction-time error rather than a guard that cannot decide.
+  const holderStore =
+    holderIndex === undefined
+      ? (store as RoleHolderAwareAdministrationStore)
+      : undefined;
+  if (
+    holderStore !== undefined &&
+    typeof holderStore.listActiveRoleAssignmentsByRole !== "function"
+  ) {
+    throw new TypeError(
+      "role administration needs a store with listActiveRoleAssignmentsByRole or a host holderIndex",
+    );
+  }
+
+  /** Records a superset row before a grant, when the host owns the index. */
+  const recordHolder = async (row: RoleHolderIndexRow): Promise<void> => {
+    if (holderIndex !== undefined) {
+      await holderIndex.record(row);
+    }
+  };
 
   const anotherActiveHolderExists = async (
     role: RoleName,
     scope: RoleAssignmentScope,
     excludingPrincipalId: PrincipalId | "",
   ): Promise<boolean> => {
-    const candidates = await holderIndex.listByRole(role);
+    if (holderStore !== undefined) {
+      // The store's by-role read verifies every row against the
+      // authoritative lifecycle and selects the exact scope already.
+      const holders = await holderStore.listActiveRoleAssignmentsByRole(
+        role,
+        scope,
+      );
+      return holders.some(
+        (holder) => holder.principalId !== excludingPrincipalId,
+      );
+    }
+    const candidates = await holderIndex!.listByRole(role);
     for (const candidate of candidates) {
       if (candidate.principalId === excludingPrincipalId) {
         continue;
@@ -369,7 +431,7 @@ export function createRoleAdministration(
         return { status: "revoked", compensated: false };
       }
       const compensationId = generateId();
-      await holderIndex.record({
+      await recordHolder({
         principalId: assignment.principalId,
         assignmentId: compensationId,
         role: assignment.role,
@@ -414,7 +476,7 @@ export function createRoleAdministration(
       // index misses (a grant that predates the index) is re-recorded so
       // the guard's by-role candidate set converges. Idempotent puts.
       for (const assignment of active) {
-        await holderIndex.record({
+        await recordHolder({
           principalId,
           assignmentId: assignment.id,
           role: assignment.role,
@@ -465,7 +527,7 @@ export function createRoleAdministration(
         return { status: "duplicate" };
       }
       const assignmentId = generateId();
-      await holderIndex.record({
+      await recordHolder({
         principalId: command.principalId,
         assignmentId,
         role: command.role,

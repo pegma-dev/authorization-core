@@ -42,7 +42,10 @@ configuration, a lesson from the reference host.
 **Audited assign.** A grant of a host-policy role — authorized by the HOST
 before the call, see the ports section — with a caller-supplied assignment
 id, an audit event, and duplicate refusal delegated to the store's
-active-tuple guarantee. The holder-index row is written BEFORE the grant
+active-tuple guarantee. When the store maintains the by-role index itself
+(`RoleHolderReader`, provided by `createRoleStore`), the store writes the
+index row inside its own grant path and the service needs no host index.
+Otherwise the holder-index row is written BEFORE the grant
 through the host port (superset invariant, `docs/STORAGE.md` recipe),
 after a pre-check that the tuple is not already active. Dangling rows
 still arise — from a crash between the two writes, or from a grant the
@@ -124,12 +127,12 @@ that document forbids stays forbidden.
 
 ## Ports (all constructor-injected, host-owned)
 
-| Port              | Provided by                               | Notes                                                                                                                                                                              |
-| ----------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Role store        | `createRoleStore` (authorization-storage) | reads, lifecycle enumeration, audited mutations                                                                                                                                    |
-| Holder index      | host, per `docs/STORAGE.md` recipe        | `record(row)`, `listByRole(role)`; write-before-grant, never delete, verify-on-read. Stays a port until the library-maintained index (#24 follow-up) ships, then becomes optional. |
-| Management policy | host configuration                        | `{ administratorRole, oneTimeSystemActors }`; the guard's compensation actor and the seed helper's actor are included by default                                                   |
-| Clock             | host (`@pegma/spine`)                     | deterministic tests                                                                                                                                                                |
+| Port              | Provided by                                  | Notes                                                                                                                                                                                                                             |
+| ----------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Role store        | `createRoleStore` (authorization-storage)    | reads, lifecycle enumeration, audited mutations                                                                                                                                                                                   |
+| Holder index      | optional; host, per `docs/STORAGE.md` recipe | `record(row)`, `listByRole(role)`; write-before-grant, never delete, verify-on-read. Omit it when the store implements `RoleHolderReader` (`createRoleStore` does); a supplied index is always used in preference to the store's. |
+| Management policy | host configuration                           | `{ administratorRole, oneTimeSystemActors }`; the guard's compensation actor and the seed helper's actor are included by default                                                                                                  |
+| Clock             | host (`@pegma/spine`)                        | deterministic tests                                                                                                                                                                                                               |
 
 The service performs no permission checks on its own callers: the HOST
 gates its routes with `hasPermission` against its own policy before

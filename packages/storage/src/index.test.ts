@@ -12,7 +12,11 @@ import type {
   RoleAssignmentScope,
 } from "@pegma/authorization-contracts";
 import { resolveAccess } from "@pegma/authorization-core";
-import { createMemoryStore } from "@pegma/storage-core";
+import {
+  createMemoryStore,
+  defineCollection,
+  type StoredRecord,
+} from "@pegma/storage-core";
 import {
   createInMemoryStorageAdapter,
   createRoleStore,
@@ -24,6 +28,7 @@ import {
   type RevokeRoleAssignmentResult,
   type RoleAssignmentAuditReader,
   type RoleAssignmentReader,
+  type RoleHolderReader,
   type VersionedRoleAssignment,
 } from "@pegma/authorization-storage";
 
@@ -87,6 +92,7 @@ describe("storage port surface", () => {
     expectTypeOf(adapter).toMatchTypeOf<PrincipalLookupStore>();
     expectTypeOf(adapter).toMatchTypeOf<IdentityLinkStore>();
     expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentReader>();
+    expectTypeOf(adapter).toMatchTypeOf<RoleHolderReader>();
     expectTypeOf(adapter).toMatchTypeOf<RoleAssignmentAuditReader>();
     expectTypeOf(adapter).toMatchTypeOf<AuditedRoleAssignmentMutationStore>();
     expect(Object.isFrozen(adapter)).toBe(true);
@@ -639,6 +645,188 @@ describe("role assignment reads", () => {
     await expect(
       adapter.listActiveRoleAssignments("principal_absent", applicationScope),
     ).resolves.toEqual([]);
+  });
+});
+
+describe("by-role selection", () => {
+  const admin = (
+    id: string,
+    principalId: string,
+    overrides: Partial<ActiveRoleAssignment> = {},
+  ) => activeAssignment(id, { principalId, role: "admin", ...overrides });
+
+  const revoke = async (
+    adapter: InMemoryStorageAdapter,
+    granted: Awaited<ReturnType<typeof requireGrant>>,
+    revokedAtEpochMs = 1_700_000_000_500,
+  ) => {
+    const result = await adapter.revokeRoleAssignmentWithAudit({
+      assignmentId: granted.record.assignment.id,
+      expectedConcurrencyToken: granted.record.concurrencyToken,
+      revokedBy: revoker,
+      revokedAtEpochMs,
+      auditEventId: `revoke:${granted.record.assignment.id}`,
+    });
+    if (result.status !== "revoked") {
+      throw new Error(`expected revoked, received ${result.status}`);
+    }
+  };
+
+  it("lists active holders of one role across principals in stable order", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(
+      adapter,
+      admin("z-tied", "principal_beta", {
+        grantedAtEpochMs: 1_700_000_000_000,
+      }),
+    );
+    await requireGrant(
+      adapter,
+      admin("late", "principal_gamma", { grantedAtEpochMs: 1_700_000_002_000 }),
+    );
+    await requireGrant(
+      adapter,
+      admin("a-tied", "principal_alpha", {
+        grantedAtEpochMs: 1_700_000_000_000,
+      }),
+    );
+    await requireGrant(adapter, activeAssignment("other-role"));
+
+    const holders = await adapter.listActiveRoleAssignmentsByRole(
+      "admin",
+      applicationScope,
+    );
+    expect(holders.map(({ id, principalId }) => [id, principalId])).toEqual([
+      ["a-tied", "principal_alpha"],
+      ["z-tied", "principal_beta"],
+      ["late", "principal_gamma"],
+    ]);
+    expect(Object.isFrozen(holders)).toBe(true);
+    expect(Object.isFrozen(holders[0])).toBe(true);
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("auditor", applicationScope),
+    ).resolves.toEqual([]);
+  });
+
+  it("stays correct across grant, revoke, and regrant under a new ID", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    const first = await requireGrant(
+      adapter,
+      admin("first", "principal_alpha"),
+    );
+    await requireGrant(adapter, admin("other", "principal_beta"));
+
+    await revoke(adapter, first);
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "other" }]);
+
+    await requireGrant(
+      adapter,
+      admin("regrant", "principal_alpha", {
+        grantedAtEpochMs: 1_700_000_001_000,
+      }),
+    );
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "other" }, { id: "regrant" }]);
+  });
+
+  it("never reports a refused grant whose index row was written", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(adapter, admin("held", "principal_alpha"));
+    await expect(
+      grant(adapter, admin("refused", "principal_alpha")),
+    ).resolves.toMatchObject({ status: "conflict", reason: "active_tuple" });
+
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "held" }]);
+  });
+
+  it("isolates holders by exact scope and host application", async () => {
+    const store = createMemoryStore();
+    const first = createRoleStore(store, "application_one");
+    const second = createRoleStore(store, "application_two");
+    await requireGrant(first, admin("app", "principal_alpha"));
+    await requireGrant(
+      first,
+      admin("org", "principal_beta", { scope: organizationScope }),
+    );
+    await requireGrant(second, admin("elsewhere", "principal_gamma"));
+
+    await expect(
+      first.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "app" }]);
+    await expect(
+      first.listActiveRoleAssignmentsByRole("admin", organizationScope),
+    ).resolves.toMatchObject([{ id: "org" }]);
+    await expect(
+      first.listActiveRoleAssignmentsByRole("admin", otherOrganizationScope),
+    ).resolves.toEqual([]);
+    await expect(
+      second.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "elsewhere" }]);
+  });
+
+  it("keeps roles whose names differ only by the key separator distinct", async () => {
+    const adapter = createInMemoryStorageAdapter();
+    await requireGrant(
+      adapter,
+      activeAssignment("piped", {
+        role: "a|b",
+        principalId: "principal_alpha",
+      }),
+    );
+    await requireGrant(
+      adapter,
+      activeAssignment("plain", { role: "a", principalId: "principal_beta" }),
+    );
+
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("a|b", applicationScope),
+    ).resolves.toMatchObject([{ id: "piped" }]);
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("a", applicationScope),
+    ).resolves.toMatchObject([{ id: "plain" }]);
+  });
+
+  it("rebuilds rows for assignments granted before the index existed", async () => {
+    const store = createMemoryStore();
+    const adapter = createRoleStore(store, "application_one");
+    const kept = await requireGrant(adapter, admin("kept", "principal_alpha"));
+    const gone = await requireGrant(adapter, admin("gone", "principal_beta"));
+    await revoke(adapter, gone);
+    // Simulate the pre-index state: drop the rows these grants wrote, as a
+    // grant made before the index existed never wrote one.
+    const holderRows = store.collection(
+      defineCollection<StoredRecord>({
+        name: "authorization_role_holders",
+        key: () => {
+          throw new Error("read-only test view");
+        },
+        codec: { encode: (record) => record, decode: (record) => record },
+      }),
+    );
+    const partition = "application_one|admin|application";
+    expect(await holderRows.delete({ partition, id: "kept" })).toBe(true);
+    expect(await holderRows.delete({ partition, id: "gone" })).toBe(true);
+    // Fail-closed while the index is incomplete: nothing is reported.
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toEqual([]);
+
+    await expect(adapter.rebuildRoleHolderIndex()).resolves.toEqual({
+      recorded: 2,
+    });
+    // Idempotent: a second run finds every row in place.
+    await expect(adapter.rebuildRoleHolderIndex()).resolves.toEqual({
+      recorded: 0,
+    });
+    expect(kept.record.assignment.id).toBe("kept");
+    await expect(
+      adapter.listActiveRoleAssignmentsByRole("admin", applicationScope),
+    ).resolves.toMatchObject([{ id: "kept" }]);
   });
 });
 

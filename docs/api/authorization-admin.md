@@ -249,20 +249,28 @@ export interface RoleAdministrationEvent {
 
 ## RoleAdministrationOptions
 
-**Kind:** interface
+**Kind:** type
 
 Constructor options for {@link createRoleAdministration}.
 
+Either the store maintains the by-role index itself (preferred), or the
+host supplies a {@link RoleHolderIndex}. When a `holderIndex` is given it
+is used even if the store could answer by-role queries, so upgrading the
+storage package never silently changes which index an existing host's
+guard trusts.
+
 ```ts
-export interface RoleAdministrationOptions {
-  readonly store: RoleAdministrationStore;
-  readonly holderIndex: RoleHolderIndex;
-  readonly policy: RoleManagementPolicy;
-  /** Epoch-milliseconds clock; injectable for deterministic tests. */
-  readonly now?: () => number;
-  /** Fresh opaque id source for grants and audit events. */
-  readonly generateId?: () => string;
-}
+export type RoleAdministrationOptions = RoleAdministrationCommonOptions &
+  (
+    | {
+        readonly store: RoleHolderAwareAdministrationStore;
+        readonly holderIndex?: undefined;
+      }
+    | {
+        readonly store: RoleAdministrationStore;
+        readonly holderIndex: RoleHolderIndex;
+      }
+  );
 ```
 
 ## RoleAdministrationStore
@@ -274,6 +282,19 @@ The store surface the service needs: reads plus audited mutations.
 ```ts
 export interface RoleAdministrationStore
   extends RoleAssignmentReader, AuditedRoleAssignmentMutationStore {}
+```
+
+## RoleHolderAwareAdministrationStore
+
+**Kind:** interface
+
+A store that also maintains the library's by-role index
+(`createRoleStore` and `createInMemoryStorageAdapter` both do). With one,
+the service needs no host-provided {@link RoleHolderIndex}.
+
+```ts
+export interface RoleHolderAwareAdministrationStore
+  extends RoleAdministrationStore, RoleHolderReader {}
 ```
 
 ## RoleHolderIndex

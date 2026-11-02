@@ -586,3 +586,163 @@ describe("ensureSeededAssignment", () => {
     ).toBe("granted");
   });
 });
+
+describe("store-maintained by-role index", () => {
+  function indexlessWorld() {
+    const store = createRoleStore(createMemoryStore(), "admin-tests");
+    const { now, generateId } = deterministic();
+    const administration = createRoleAdministration({
+      store,
+      policy: { administratorRole: ADMIN },
+      now,
+      generateId,
+    });
+    return { store, administration };
+  }
+
+  async function seed(
+    store: RoleAdministrationStore,
+    principalId: PrincipalId,
+    assignmentId: string,
+    scope: RoleAssignmentScope = APPLICATION,
+  ) {
+    expect(
+      await ensureSeededAssignment({
+        store,
+        principalId,
+        role: ADMIN,
+        scope,
+        assignmentId,
+        auditEventId: `evt-${assignmentId}`,
+        now: () => 1,
+      }),
+    ).toBe("granted");
+  }
+
+  it("guards the last administrator with no host holder index", async () => {
+    const { administration, store } = indexlessWorld();
+    await seed(store, bob, "seed-bob");
+    // Same role name in an organization scope never counts.
+    await seed(store, carol, "seed-carol-org", {
+      kind: "organization",
+      organizationId: "org-1",
+    });
+    expect(
+      await administration.revokeRole({
+        assignmentId: "seed-bob",
+        actor: operator,
+      }),
+    ).toEqual({ status: "last_administrator" });
+
+    const assigned = await administration.assignRole({
+      principalId: carol,
+      role: ADMIN,
+      scope: APPLICATION,
+      actor: operator,
+    });
+    expect(assigned.status).toBe("assigned");
+    expect(
+      await administration.revokeRole({
+        assignmentId: "seed-bob",
+        actor: operator,
+      }),
+    ).toEqual({ status: "revoked", compensated: false });
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, carol),
+    ).toBe(false);
+  });
+
+  it("serializes concurrent revocations of the two last administrators", async () => {
+    const { administration, store } = indexlessWorld();
+    await seed(store, bob, "seed-bob");
+    await seed(store, carol, "seed-carol");
+    const results = await Promise.all([
+      administration.revokeRole({ assignmentId: "seed-bob", actor: operator }),
+      administration.revokeRole({
+        assignmentId: "seed-carol",
+        actor: operator,
+      }),
+    ]);
+    expect(results.map(({ status }) => status).sort()).toEqual([
+      "last_administrator",
+      "revoked",
+    ]);
+  });
+
+  it("compensates a cross-instance race using the store's index", async () => {
+    const shared = createRoleStore(createMemoryStore(), "admin-tests");
+    const clockA = deterministic();
+    const clockB = deterministic();
+    const instanceB = createRoleAdministration({
+      store: shared,
+      policy: { administratorRole: ADMIN },
+      now: clockB.now,
+      generateId: () => `b-${clockB.generateId()}`,
+    });
+    let interleaved = false;
+    const instanceA = createRoleAdministration({
+      store: {
+        ...shared,
+        revokeRoleAssignmentWithAudit: async (command) => {
+          if (!interleaved) {
+            interleaved = true;
+            expect(
+              (
+                await instanceB.revokeRole({
+                  assignmentId: "seed-carol",
+                  actor: operator,
+                })
+              ).status,
+            ).toBe("revoked");
+          }
+          return shared.revokeRoleAssignmentWithAudit(command);
+        },
+      },
+      policy: { administratorRole: ADMIN },
+      now: clockA.now,
+      generateId: () => `a-${clockA.generateId()}`,
+    });
+    await seed(shared, bob, "seed-bob");
+    await seed(shared, carol, "seed-carol");
+
+    expect(
+      await instanceA.revokeRole({ assignmentId: "seed-bob", actor: operator }),
+    ).toEqual({ status: "revoked", compensated: true });
+    expect(
+      (await shared.listActiveRoleAssignmentsByRole(ADMIN, APPLICATION)).map(
+        ({ principalId, grantedBy }) => [principalId, grantedBy],
+      ),
+    ).toEqual([
+      [bob, { kind: "system", systemId: GUARD_COMPENSATION_SYSTEM_ID }],
+    ]);
+  });
+
+  it("prefers an explicitly supplied host index over the store's", async () => {
+    const store = createRoleStore(createMemoryStore(), "admin-tests");
+    const holderIndex = memoryHolderIndex();
+    const administration = createRoleAdministration({
+      store,
+      holderIndex,
+      policy: { administratorRole: ADMIN },
+    });
+    // Seeded without the host index: the store knows both holders, the
+    // host index knows neither, so the host index's answer is what decides.
+    await seed(store, bob, "seed-bob");
+    await seed(store, carol, "seed-carol");
+    expect(
+      await administration.anotherActiveHolderExists(ADMIN, APPLICATION, bob),
+    ).toBe(false);
+  });
+
+  it("refuses construction when neither index is available", () => {
+    const store = createRoleStore(createMemoryStore(), "admin-tests");
+    const { listActiveRoleAssignmentsByRole: _omitted, ...withoutByRole } =
+      store;
+    expect(() =>
+      createRoleAdministration({
+        store: withoutByRole,
+        policy: { administratorRole: ADMIN },
+      } as never),
+    ).toThrow(TypeError);
+  });
+});
