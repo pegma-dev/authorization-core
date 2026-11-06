@@ -111,36 +111,109 @@ export interface AccessGrantIssuer<ReadRequest> {
   issue(input: IssueAccessGrantInput): Promise<string>;
 }
 
-function snapshotStringArray(
-  value: readonly string[],
-  field: string,
-): string[] {
+function snapshotStringArray(value: unknown, field: string): readonly string[] {
   if (!Array.isArray(value)) {
     fail(`${field} must be an array`);
   }
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  if (
+    lengthDescriptor === undefined ||
+    !("value" in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== "number" ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0
+  ) {
+    fail(`${field} must be a dense string array`);
+  }
   const copy: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index) || typeof value[index] !== "string") {
+  for (let index = 0; index < lengthDescriptor.value; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, index);
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      typeof descriptor.value !== "string"
+    ) {
       fail(`${field} must be a dense string array`);
     }
-    copy.push(value[index]);
+    copy.push(descriptor.value);
   }
-  return Object.freeze(copy) as string[];
+  return Object.freeze(copy);
+}
+
+function ownDataProperty(
+  value: object,
+  property: PropertyKey,
+  field: string,
+): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, property);
+  if (descriptor === undefined || !("value" in descriptor)) {
+    fail(`${field} must be an own data property`);
+  }
+  return descriptor.value;
+}
+
+function snapshotIssueInput(value: unknown): Readonly<{
+  audience: string;
+  requestedPermissions: readonly string[];
+  source: unknown;
+}> {
+  if (typeof value !== "object" || value === null) {
+    fail("access-grant issue input must be an object");
+  }
+  const audience = ownDataProperty(value, "audience", "input.audience");
+  const requestedPermissions = ownDataProperty(
+    value,
+    "requestedPermissions",
+    "input.requestedPermissions",
+  );
+  const source = ownDataProperty(value, "source", "input.source");
+  if (typeof audience !== "string") {
+    fail("input.audience must be a string");
+  }
+  return Object.freeze({
+    audience,
+    requestedPermissions: snapshotStringArray(
+      requestedPermissions,
+      "input.requestedPermissions",
+    ),
+    source,
+  });
 }
 
 function snapshotContext(value: AccessContext): AccessContext {
   if (typeof value !== "object" || value === null) {
     fail("source access context must be an object");
   }
+  const principalId = ownDataProperty(
+    value,
+    "principalId",
+    "context.principalId",
+  );
+  const policyVersion = ownDataProperty(
+    value,
+    "policyVersion",
+    "context.policyVersion",
+  );
+  const roles = ownDataProperty(value, "roles", "context.roles");
+  const entitlements = ownDataProperty(
+    value,
+    "entitlements",
+    "context.entitlements",
+  );
+  const permissions = ownDataProperty(
+    value,
+    "permissions",
+    "context.permissions",
+  );
+  if (typeof principalId !== "string" || typeof policyVersion !== "string") {
+    fail("source access context identifiers must be strings");
+  }
   return Object.freeze({
-    principalId: value.principalId,
-    policyVersion: value.policyVersion,
-    roles: snapshotStringArray(value.roles, "context.roles"),
-    entitlements: snapshotStringArray(
-      value.entitlements,
-      "context.entitlements",
-    ),
-    permissions: snapshotStringArray(value.permissions, "context.permissions"),
+    principalId,
+    policyVersion,
+    roles: snapshotStringArray(roles, "context.roles"),
+    entitlements: snapshotStringArray(entitlements, "context.entitlements"),
+    permissions: snapshotStringArray(permissions, "context.permissions"),
   });
 }
 
@@ -148,17 +221,22 @@ function snapshotScope(value: AccessGrantSourceScope): AccessGrantSourceScope {
   if (typeof value !== "object" || value === null) {
     fail("source scope must be an object");
   }
-  if (value.kind === "application") {
+  const kind = ownDataProperty(value, "kind", "scope.kind");
+  if (kind === "application") {
     return Object.freeze({ kind: "application" });
   }
-  if (
-    value.kind === "organization" &&
-    typeof value.organizationId === "string" &&
-    value.organizationId.length > 0
-  ) {
+  if (kind === "organization") {
+    const organizationId = ownDataProperty(
+      value,
+      "organizationId",
+      "scope.organizationId",
+    );
+    if (typeof organizationId !== "string" || organizationId.length === 0) {
+      fail("source scope is malformed");
+    }
     return Object.freeze({
       kind: "organization",
-      organizationId: value.organizationId,
+      organizationId,
     });
   }
   fail("source scope is malformed");
@@ -308,7 +386,10 @@ export function createAccessGrantIssuerInternal<ReadRequest>(
     },
 
     async issue(input: IssueAccessGrantInput): Promise<string> {
-      const source = sourceCapabilities.get(input.source);
+      const issueInput = snapshotIssueInput(input);
+      const source = sourceCapabilities.get(
+        issueInput.source as SourceAuthorizationCapability,
+      );
       if (
         source === undefined ||
         source.owner !== owner ||
@@ -336,11 +417,11 @@ export function createAccessGrantIssuerInternal<ReadRequest>(
         fail("source authorization snapshot is malformed");
       }
 
-      const allowed = audiencePermissions.get(input.audience);
+      const allowed = audiencePermissions.get(issueInput.audience);
       if (allowed === undefined) {
         fail("access-grant audience is not configured");
       }
-      const requested = canonicalPermissions(input.requestedPermissions);
+      const requested = canonicalPermissions(issueInput.requestedPermissions);
       if (requested.length === 0) {
         fail("access grant must contain at least one permission");
       }
@@ -371,7 +452,7 @@ export function createAccessGrantIssuerInternal<ReadRequest>(
       const payload = {
         iss: issuerName,
         application_id: applicationId,
-        aud: input.audience,
+        aud: issueInput.audience,
         sub: source.context.principalId,
         exp,
         iat,

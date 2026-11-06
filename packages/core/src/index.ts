@@ -27,46 +27,98 @@ function requireName(value: string, field: string): void {
   }
 }
 
-function ownDataValue(value: object, field: string): unknown {
+function ownDataValue(
+  value: object,
+  field: string,
+  label: string = field,
+): unknown {
+  if (!Object.hasOwn(value, field)) {
+    throw new TypeError(`${label} must be an own data property`);
+  }
+
   const descriptor = Object.getOwnPropertyDescriptor(value, field);
   if (descriptor === undefined || !("value" in descriptor)) {
-    throw new TypeError(`${field} must be an own data property`);
+    throw new TypeError(`${label} must be an own data property`);
   }
 
   return descriptor.value;
 }
 
-function requiredString(value: object, field: string): string {
-  const candidate = ownDataValue(value, field);
-  if (typeof candidate !== "string") {
-    throw new TypeError(`${field} must be a string`);
+function optionalOwnDataValue(
+  value: object,
+  field: string,
+  label: string = field,
+): unknown {
+  if (!Object.hasOwn(value, field)) {
+    return undefined;
   }
 
-  requireName(candidate, field);
+  const descriptor = Object.getOwnPropertyDescriptor(value, field);
+  if (descriptor === undefined || !("value" in descriptor)) {
+    throw new TypeError(`${label} must be an own data property`);
+  }
+
+  return descriptor.value;
+}
+
+function requiredString(
+  value: object,
+  field: string,
+  label: string = field,
+): string {
+  const candidate = ownDataValue(value, field, label);
+  if (typeof candidate !== "string") {
+    throw new TypeError(`${label} must be a string`);
+  }
+
+  requireName(candidate, label);
   return candidate;
 }
 
-function copyStringArray(value: object, field: string): string[] {
-  const candidate = ownDataValue(value, field);
+function copyStringArrayValue(candidate: unknown, label: string): string[] {
   if (!Array.isArray(candidate)) {
-    throw new TypeError(`${field} must be an array of strings`);
+    throw new TypeError(`${label} must be an array of strings`);
+  }
+
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(candidate, "length");
+  if (
+    lengthDescriptor === undefined ||
+    !("value" in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== "number" ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0
+  ) {
+    throw new TypeError(`${label} must be a dense array of strings`);
   }
 
   const copy: string[] = [];
-  for (let index = 0; index < candidate.length; index += 1) {
+  for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(candidate, index);
     if (
       descriptor === undefined ||
       !("value" in descriptor) ||
       typeof descriptor.value !== "string"
     ) {
-      throw new TypeError(`${field} must be a dense array of strings`);
+      throw new TypeError(`${label} must be a dense array of strings`);
     }
 
     copy.push(descriptor.value);
   }
 
   return copy;
+}
+
+function copyStringArray(value: object, field: string): string[] {
+  return copyStringArrayValue(ownDataValue(value, field), field);
+}
+
+function copyOptionalStringArray(
+  value: object,
+  field: string,
+  label: string,
+): string[] {
+  const candidate = optionalOwnDataValue(value, field, label);
+  return candidate === undefined ? [] : copyStringArrayValue(candidate, label);
 }
 
 function serializeJsonString(value: string): string {
@@ -89,29 +141,66 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 function ownPermissions(
   assignments: Readonly<Record<string, readonly PermissionName[]>> | undefined,
   name: string,
+  label: string,
 ): readonly PermissionName[] | undefined {
   if (assignments === undefined || !Object.hasOwn(assignments, name)) {
     return undefined;
   }
 
-  return assignments[name] ?? [];
+  const descriptor = Object.getOwnPropertyDescriptor(assignments, name);
+  if (descriptor === undefined || !("value" in descriptor)) {
+    throw new TypeError(`${label}.${name} must be an own data property`);
+  }
+
+  if (descriptor.value === undefined) {
+    return [];
+  }
+
+  return copyStringArrayValue(descriptor.value, `${label}.${name}`);
+}
+
+function optionalPermissionMap(
+  policy: AccessPolicy,
+  field: "roles" | "entitlements",
+): Readonly<Record<string, readonly PermissionName[]>> | undefined {
+  const label = `policy.${field}`;
+  const candidate = optionalOwnDataValue(policy, field, label);
+  if (candidate === undefined) {
+    return undefined;
+  }
+  if (typeof candidate !== "object" || candidate === null) {
+    throw new TypeError(`${label} must be an object`);
+  }
+
+  return candidate as Readonly<Record<string, readonly PermissionName[]>>;
 }
 
 function resolveAccessInternal(
   subject: AccessSubject,
   policy: AccessPolicy,
 ): AccessResolution {
-  requireName(subject.principalId, "principalId");
-  requireName(policy.version, "policy.version");
+  const principalId = requiredString(subject, "principalId");
+  const policyVersion = requiredString(policy, "version", "policy.version");
+  const roles = uniqueSorted(
+    copyOptionalStringArray(subject, "roles", "roles"),
+  );
+  const entitlements = uniqueSorted(
+    copyOptionalStringArray(subject, "entitlements", "entitlements"),
+  );
+  const defaults = copyOptionalStringArray(
+    policy,
+    "defaults",
+    "policy.defaults",
+  );
+  const roleAssignments = optionalPermissionMap(policy, "roles");
+  const entitlementAssignments = optionalPermissionMap(policy, "entitlements");
 
-  const roles = uniqueSorted(subject.roles ?? []);
-  const entitlements = uniqueSorted(subject.entitlements ?? []);
-  const granted = new Set<PermissionName>(policy.defaults ?? []);
+  const granted = new Set<PermissionName>(defaults);
   const unknownRoles: string[] = [];
   const unknownEntitlements: string[] = [];
 
   for (const role of roles) {
-    const permissions = ownPermissions(policy.roles, role);
+    const permissions = ownPermissions(roleAssignments, role, "policy.roles");
     if (permissions === undefined) {
       unknownRoles.push(role);
       continue;
@@ -123,7 +212,11 @@ function resolveAccessInternal(
   }
 
   for (const entitlement of entitlements) {
-    const permissions = ownPermissions(policy.entitlements, entitlement);
+    const permissions = ownPermissions(
+      entitlementAssignments,
+      entitlement,
+      "policy.entitlements",
+    );
     if (permissions === undefined) {
       unknownEntitlements.push(entitlement);
       continue;
@@ -135,8 +228,8 @@ function resolveAccessInternal(
   }
 
   const context = Object.freeze({
-    principalId: subject.principalId,
-    policyVersion: policy.version,
+    principalId,
+    policyVersion,
     roles,
     entitlements,
     permissions: uniqueSorted([...granted]),

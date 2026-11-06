@@ -153,9 +153,10 @@ export type PolicyValidationResult =
 
 Validate an already parsed policy value without returning a partial policy.
 
-The input must have the same ordinary data-property shape produced by
-JSON.parse. Unexpected proxies or reflective failures are reported as an
-invalid structure rather than escaping the fail-closed boundary.
+The input must use enumerable data properties and either the ordinary JSON
+object prototype or a null prototype. Unexpected proxies or reflective
+failures are reported as an invalid structure rather than escaping the
+fail-closed boundary.
 
 ```ts
 export declare function validatePolicy(input: unknown): PolicyValidationResult;

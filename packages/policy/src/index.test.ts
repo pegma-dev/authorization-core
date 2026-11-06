@@ -33,6 +33,7 @@ describe("PolicyDocumentV1", () => {
 
     expect(policy).toEqual({ schemaVersion: 1, version: "v1" });
     expect(policy.schemaVersion).toBe(POLICY_SCHEMA_VERSION);
+    expect(Object.getPrototypeOf(policy)).toBeNull();
     expect(Object.isFrozen(policy)).toBe(true);
   });
 
@@ -74,6 +75,23 @@ describe("PolicyDocumentV1", () => {
     const second = parsePolicy(JSON.parse(JSON.stringify(first)));
 
     expect(second).toEqual(first);
+  });
+
+  it("revalidates parsed null-prototype output", () => {
+    const first = parsePolicy({
+      schemaVersion: 1,
+      version: "direct-round-trip-1",
+      defaults: ["account.read.own"],
+      roles: { support: ["support.queue.read"] },
+      entitlements: { "plan.pro": ["planner.desktop.use"] },
+    });
+
+    const second = parsePolicy(first);
+
+    expect(second).toEqual(first);
+    expect(Object.getPrototypeOf(second)).toBeNull();
+    expect(Object.getPrototypeOf(second.roles)).toBeNull();
+    expect(Object.getPrototypeOf(second.entitlements)).toBeNull();
   });
 
   it("integrates with core while allowing cross-source overlap", () => {
@@ -336,17 +354,7 @@ describe("strict document validation", () => {
       Object.create({ defaults: ["inherited.read"] }),
       { schemaVersion: 1, version: "v1" },
     );
-    const nullPrototypeDocument = Object.assign(Object.create(null), {
-      schemaVersion: 1,
-      version: "v1",
-    });
-
-    for (const input of [
-      symbolDocument,
-      accessorDocument,
-      inheritedDocument,
-      nullPrototypeDocument,
-    ]) {
+    for (const input of [symbolDocument, accessorDocument, inheritedDocument]) {
       expect(diagnosticCodes(input)).toContain("invalid_structure");
     }
   });

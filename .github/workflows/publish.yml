@@ -104,11 +104,30 @@ jobs:
       RELEASE_COMMIT: ${{ github.sha }}
 
     steps:
-      - name: Check out the exact release tag
+      - name: Check out the release event commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: refs/tags/${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
+          persist-credentials: false
+
+      - name: Confirm the release tag target
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          authorization="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\n')"
+          unset GITHUB_TOKEN
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${authorization}" \
+            git fetch --force --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          unset authorization
+          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "${tag_commit}" != "${RELEASE_COMMIT}" ]]; then
+            echo "::error::Release tag target does not match the release event commit"
+            exit 1
+          fi
 
       - name: Set up Node.js and the npm registry
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -127,4 +146,4 @@ jobs:
           path: .release
 
       - name: Publish prepared tarballs
-        run: npm run release:publish -- -- --expected-release-commit "${RELEASE_COMMIT}" --manifest .release/package-manifest.json
+        run: node scripts/release-packages.mjs publish --expected-release-commit "${RELEASE_COMMIT}" --manifest .release/package-manifest.json

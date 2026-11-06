@@ -125,20 +125,21 @@ assignment is never missed.
 
 Each audited grant therefore costs one more `insertIfAbsent` than before,
 outside the grant transaction. Each by-role read is one partition listing plus
-one authoritative point read per row, issued in batches of 16. Because rows
-are never deleted, the partition grows with every grant attempt for that role
-and scope, including revoked and refused ones, so read cost tracks a role's
-whole grant history rather than its current holders. That is the right trade
-for administrator-style roles granted a handful of times; a role granted
-routinely to large populations is a poor fit for by-role reads.
+one exact holder confirmation per row, followed by pointer lookup and an
+authoritative assignment read in batches of 16. Because rows are never deleted,
+the partition grows with every grant attempt for that role and scope, including
+revoked and refused ones, so read cost tracks a role's whole grant history
+rather than its current holders. That is the right trade for
+administrator-style roles granted a handful of times; a role granted routinely
+to large populations is a poor fit for by-role reads.
 
 Assignments granted before the index existed (before this release) have no
 row. Until `RoleHolderIndexMaintenance.rebuildRoleHolderIndex()` runs once
 over the backing store, they are missing from by-role results, which a
 last-administrator guard sees as "no other holder" and refuses — fail closed,
 but still a refusal an operator would notice. The rebuild reads the
-application's assignment pointers (a single-partition scan), writes any
-missing rows, reports how many it wrote, and is idempotent and safe to run
+application's assignment pointers, confirms each through its exact key, writes
+any missing rows, reports how many it wrote, and is idempotent and safe to run
 alongside live grants and revocations.
 
 The by-role read is a non-snapshot read like every other listing, so the
@@ -346,12 +347,19 @@ partition and would therefore leave the transaction boundary.
 
 ## Non-snapshot reads
 
-`listActiveRoleAssignments` and `listRoleAssignments` are each one partition
-read of the authoritative assignment records. They use no derived selection
-index and no fence to compare, so there is nothing that can drift from the
-records or that would need reconciling; but a partition listing is not a
-snapshot, and a read that begins before a revocation may still observe the
-assignment as active.
+`listActiveRoleAssignments` and `listRoleAssignments` each begin with one
+partition read of the authoritative assignment records. They use no derived
+selection index and no fence to compare, so there is nothing that can drift
+from the records or that would need reconciling; but a partition listing is
+not a snapshot, and a read that begins before a revocation may still observe
+the assignment as active.
+
+Each decoded row is confirmed through its recomputed exact record key before it
+is used, with point reads issued in batches of 16. A key outside the requested
+partition or a duplicate recomputed key rejects as malformed. If a row vanishes
+or changes between the partition listing and point confirmation, the read
+rejects with a retry-oriented storage error. This confirmation is still not a
+snapshot.
 
 The host's cache generation fence is therefore load-bearing rather than
 belt-and-braces. A fill must capture all applicable generations before its

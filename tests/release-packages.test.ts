@@ -465,13 +465,51 @@ describe("release source authentication", () => {
     expect(publishStart).toBeGreaterThan(prepareStart);
     const prepare = jobs.slice(prepareStart, publishStart);
     const publish = jobs.slice(publishStart);
+    const tagCheckStart = publish.indexOf(
+      "      - name: Confirm the release tag target",
+    );
+    const nodeSetupStart = publish.indexOf(
+      "      - name: Set up Node.js and the npm registry",
+    );
+    expect(tagCheckStart).toBeGreaterThanOrEqual(0);
+    expect(nodeSetupStart).toBeGreaterThan(tagCheckStart);
+    const beforeTagCheck = publish.slice(0, tagCheckStart);
+    const tagCheck = publish.slice(tagCheckStart, nodeSetupStart);
+    const afterTagCheck = publish.slice(nodeSetupStart);
     expect(prepare).not.toContain("id-token: write");
     expect(publish).toContain("id-token: write");
     expect(publish).not.toContain("corepack");
     expect(publish).not.toContain("pnpm");
     expect(publish).not.toContain("release:pack");
     expect(publish).toContain("npm install --global npm@11.18.0");
-    expect(publish).toContain("npm run release:publish");
+    expect(publish).not.toContain("npm run");
+    expect(publish).toContain("ref: ${{ github.sha }}");
+    expect(publish).toContain("persist-credentials: false");
+    expect(beforeTagCheck).not.toContain("github.token");
+    expect(afterTagCheck).not.toContain("github.token");
+    expect(tagCheck).toContain("GITHUB_TOKEN: ${{ github.token }}");
+    expect(tagCheck).toContain("unset GITHUB_TOKEN");
+    expect(tagCheck).toContain("GIT_CONFIG_COUNT=1");
+    expect(tagCheck).toContain(
+      "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader",
+    );
+    expect(tagCheck).toContain(
+      'GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${authorization}"',
+    );
+    expect(tagCheck).toContain(
+      'git fetch --force --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"',
+    );
+    expect(tagCheck).toContain("unset authorization");
+    expect(tagCheck).not.toContain("git config");
+    expect(publish).toContain(
+      'git rev-parse "refs/tags/${RELEASE_TAG}^{commit}"',
+    );
+    expect(publish).toContain(
+      'if [[ "${tag_commit}" != "${RELEASE_COMMIT}" ]]',
+    );
+    expect(publish).toContain(
+      'node scripts/release-packages.mjs publish --expected-release-commit "${RELEASE_COMMIT}"',
+    );
     expect(workflow).not.toContain("identity-bootstrap");
     expect(workflow).not.toContain("github.run_attempt");
     expect(workflow).toContain("retention-days: 30");

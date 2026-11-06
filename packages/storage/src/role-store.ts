@@ -14,12 +14,14 @@ import {
   createMemoryStore,
   StorageError,
   type Store,
+  type StoredRecord,
   type TransactionAction,
 } from "@pegma/storage-core";
 
 import {
   assignmentPointers,
   assignmentRecordId,
+  auditRecordId,
   authorizationRecords,
   GRANT_SEQUENCE,
   identityLinkKey,
@@ -37,6 +39,7 @@ import {
   type StoredAssignment,
   type StoredAssignmentPointer,
   type StoredAudit,
+  type StoredRoleHolder,
   type StoredTuple,
 } from "./collections.js";
 import type {
@@ -155,6 +158,9 @@ const freezeAuditRecord = (
 /** Authoritative point reads issued concurrently by one by-role read. */
 const HOLDER_VERIFY_BATCH = 16;
 
+/** Point confirmations issued concurrently by one principal listing. */
+const RECORD_CONFIRM_BATCH = 16;
+
 const byGrantThenId = (left: RoleAssignment, right: RoleAssignment): number =>
   left.grantedAtEpochMs !== right.grantedAtEpochMs
     ? left.grantedAtEpochMs - right.grantedAtEpochMs
@@ -233,22 +239,139 @@ const snapshotRevokeCommand = (
 const corrupt = (detail: string): StorageError =>
   new StorageError(`authorization storage holds a corrupt record: ${detail}`);
 
+const changedDuringRead = (detail: string): StorageError =>
+  new StorageError(
+    `authorization storage changed during read; retry: ${detail}`,
+  );
+
+export const storedRecordsEqual = (
+  left: StoredRecord,
+  right: StoredRecord,
+): boolean => {
+  const leftFields = Reflect.ownKeys(left);
+  const rightFields = Reflect.ownKeys(right);
+  if (
+    leftFields.some((field) => typeof field !== "string") ||
+    rightFields.some((field) => typeof field !== "string")
+  ) {
+    return false;
+  }
+  return (
+    leftFields.length === rightFields.length &&
+    leftFields.every(
+      (field) =>
+        typeof field === "string" &&
+        Object.hasOwn(right, field) &&
+        left[field] === right[field],
+    )
+  );
+};
+
+const requireLocation = (
+  actual: RecordLocation,
+  expected: RecordLocation,
+  detail: string,
+): void => {
+  if (
+    actual.applicationId !== expected.applicationId ||
+    actual.principalId !== expected.principalId ||
+    !scopesEqual(actual.scope, expected.scope)
+  ) {
+    throw corrupt(`${detail} disagrees with its requested partition`);
+  }
+};
+
+const requirePointerKey = (
+  pointer: StoredAssignmentPointer,
+  applicationId: ApplicationId,
+  assignmentId: RoleAssignmentId,
+): StoredAssignmentPointer => {
+  if (
+    pointer.applicationId !== applicationId ||
+    pointer.assignmentId !== assignmentId
+  ) {
+    throw corrupt(`${assignmentId} has a pointer that disagrees with its key`);
+  }
+  return pointer;
+};
+
+const requireHolderKey = (
+  holder: StoredRoleHolder,
+  expected: StoredRoleHolder,
+): StoredRoleHolder => {
+  requireLocation(holder, expected, `${expected.assignmentId} holder row`);
+  if (
+    holder.assignmentId !== expected.assignmentId ||
+    holder.role !== expected.role
+  ) {
+    throw corrupt(
+      `${expected.assignmentId} has a holder row that disagrees with its key`,
+    );
+  }
+  return holder;
+};
+
 const requireAssignment = (
   record: AuthorizationRecord | undefined,
+  location: RecordLocation,
   assignmentId: RoleAssignmentId,
+  role: RoleName,
 ): StoredAssignment => {
   if (record === undefined || record.kind !== "assignment") {
     throw corrupt(`${assignmentId} is not an assignment record`);
+  }
+  requireLocation(record, location, `${assignmentId} assignment`);
+  if (
+    record.assignment.id !== assignmentId ||
+    record.assignment.principalId !== location.principalId ||
+    !scopesEqual(record.assignment.scope, location.scope) ||
+    record.assignment.role !== role
+  ) {
+    throw corrupt(`${assignmentId} disagrees with its requested key`);
   }
   return record;
 };
 
 const requireTuple = (
   record: AuthorizationRecord | undefined,
-  role: string,
+  location: RecordLocation,
+  role: RoleName,
 ): StoredTuple => {
   if (record === undefined || record.kind !== "tuple") {
     throw corrupt(`the guard for ${role} is not a tuple record`);
+  }
+  requireLocation(record, location, `${role} guard`);
+  if (record.role !== role) {
+    throw corrupt(`the guard for ${role} disagrees with its requested key`);
+  }
+  return record;
+};
+
+const requireLifecyclePosition = (
+  record: AuthorizationRecord | null,
+  location: RecordLocation,
+  assignmentId: RoleAssignmentId,
+  sequence: number,
+  eventId: string,
+): StoredAudit => {
+  if (record === null || record.kind !== "audit") {
+    throw corrupt(
+      `${assignmentId} is missing lifecycle position ${String(sequence)}`,
+    );
+  }
+  requireLocation(
+    record,
+    location,
+    `${assignmentId} lifecycle position ${String(sequence)}`,
+  );
+  if (
+    record.assignmentId !== assignmentId ||
+    record.sequence !== sequence ||
+    record.eventId !== eventId
+  ) {
+    throw corrupt(
+      `${assignmentId} lifecycle position ${String(sequence)} disagrees with its requested key`,
+    );
   }
   return record;
 };
@@ -299,19 +422,99 @@ export const createRoleStore = (
   const links = store.collection(identityLinkCollection);
   const holders = store.collection(roleHolders);
 
+  const confirmRecordListing = async (
+    partition: string,
+    found: readonly AuthorizationRecord[],
+  ): Promise<void> => {
+    const ids = new Set<string>();
+    const keyed = found.map((record) => {
+      const key = authorizationRecords.key(record);
+      if (key.partition !== partition || ids.has(key.id)) {
+        throw corrupt("an authorization row disagrees with its physical key");
+      }
+      ids.add(key.id);
+      return { key, record };
+    });
+    for (let start = 0; start < keyed.length; start += RECORD_CONFIRM_BATCH) {
+      await Promise.all(
+        keyed.slice(start, start + RECORD_CONFIRM_BATCH).map(async (listed) => {
+          const confirmed = await records.get(listed.key);
+          if (
+            confirmed === null ||
+            !storedRecordsEqual(
+              authorizationRecords.codec.encode(listed.record),
+              authorizationRecords.codec.encode(confirmed),
+            )
+          ) {
+            throw changedDuringRead("an authorization row moved");
+          }
+        }),
+      );
+    }
+  };
+
+  const confirmHolderListing = async (
+    partition: string,
+    found: readonly StoredRoleHolder[],
+  ): Promise<void> => {
+    const ids = new Set<string>();
+    for (const holder of found) {
+      const key = roleHolders.key(holder);
+      if (key.partition !== partition || ids.has(key.id)) {
+        throw corrupt("a role-holder row disagrees with its physical key");
+      }
+      ids.add(key.id);
+      const confirmed = await holders.get(key);
+      if (
+        confirmed === null ||
+        !storedRecordsEqual(
+          roleHolders.codec.encode(holder),
+          roleHolders.codec.encode(confirmed),
+        )
+      ) {
+        throw changedDuringRead("a role-holder row moved");
+      }
+    }
+  };
+
+  const confirmPointerListing = async (
+    partition: string,
+    found: readonly StoredAssignmentPointer[],
+  ): Promise<void> => {
+    const ids = new Set<string>();
+    for (const pointer of found) {
+      const key = assignmentPointers.key(pointer);
+      if (key.partition !== partition || ids.has(key.id)) {
+        throw corrupt("an assignment pointer disagrees with its physical key");
+      }
+      ids.add(key.id);
+      const confirmed = await pointers.get(key);
+      if (
+        confirmed === null ||
+        !storedRecordsEqual(
+          assignmentPointers.codec.encode(pointer),
+          assignmentPointers.codec.encode(confirmed),
+        )
+      ) {
+        throw changedDuringRead("an assignment pointer moved");
+      }
+    }
+  };
+
   const locate = async (
     assignmentId: RoleAssignmentId,
-  ): Promise<RecordLocation | null> => {
+  ): Promise<StoredAssignmentPointer | null> => {
     const pointer = await pointers.get(pointerKey(applicationId, assignmentId));
-    if (pointer === null || pointer.assignmentId !== assignmentId) {
+    if (pointer === null) {
       return null;
     }
-    return pointer;
+    return requirePointerKey(pointer, applicationId, assignmentId);
   };
 
   const readAssignment = async (
     location: RecordLocation,
     assignmentId: RoleAssignmentId,
+    role: RoleName,
   ): Promise<{
     readonly stored: StoredAssignment;
     readonly version: string;
@@ -323,7 +526,12 @@ export const createRoleStore = (
     return versioned === null
       ? null
       : {
-          stored: requireAssignment(versioned.value, assignmentId),
+          stored: requireAssignment(
+            versioned.value,
+            location,
+            assignmentId,
+            role,
+          ),
           version: versioned.version,
         };
   };
@@ -335,12 +543,15 @@ export const createRoleStore = (
       const stored = await links.get(
         identityLinkKey(applicationId, key.issuer, key.subject),
       );
+      if (stored === null) {
+        return null;
+      }
       if (
-        stored === null ||
+        stored.applicationId !== applicationId ||
         stored.link.key.issuer !== key.issuer ||
         stored.link.key.subject !== key.subject
       ) {
-        return null;
+        throw corrupt("an identity link disagrees with its requested key");
       }
       return stored.link.principalId;
     },
@@ -353,6 +564,7 @@ export const createRoleStore = (
       });
       const stored = result.value.link;
       if (
+        result.value.applicationId !== applicationId ||
         stored.key.issuer !== snapshot.key.issuer ||
         stored.key.subject !== snapshot.key.subject
       ) {
@@ -376,7 +588,11 @@ export const createRoleStore = (
       if (location === null) {
         return null;
       }
-      const current = await readAssignment(location, assignmentId);
+      const current = await readAssignment(
+        location,
+        assignmentId,
+        location.role,
+      );
       return current === null
         ? null
         : freezeVersioned({
@@ -389,12 +605,18 @@ export const createRoleStore = (
       principalId: PrincipalId,
       scope: RoleAssignmentScope,
     ): Promise<readonly ActiveRoleAssignment[]> {
+      const exact = snapshotScope(scope);
       const partition = recordPartition({
         applicationId,
         principalId,
-        scope: snapshotScope(scope),
+        scope: exact,
       });
       const found = await records.list(partition);
+      await confirmRecordListing(partition, found);
+      const expected = { applicationId, principalId, scope: exact };
+      for (const record of found) {
+        requireLocation(record, expected, "authorization record");
+      }
       return Object.freeze(
         found
           .filter(
@@ -412,12 +634,18 @@ export const createRoleStore = (
       principalId: PrincipalId,
       scope: RoleAssignmentScope,
     ): Promise<readonly RoleAssignment[]> {
+      const exact = snapshotScope(scope);
       const partition = recordPartition({
         applicationId,
         principalId,
-        scope: snapshotScope(scope),
+        scope: exact,
       });
       const found = await records.list(partition);
+      await confirmRecordListing(partition, found);
+      const expected = { applicationId, principalId, scope: exact };
+      for (const record of found) {
+        requireLocation(record, expected, "authorization record");
+      }
       return Object.freeze(
         found
           .filter(
@@ -435,18 +663,42 @@ export const createRoleStore = (
       scope: RoleAssignmentScope,
     ): Promise<readonly ActiveRoleAssignment[]> {
       const exact = snapshotScope(scope);
-      const candidates = await holders.list(
-        roleHolderPartition(applicationId, role, exact),
-      );
+      const partition = roleHolderPartition(applicationId, role, exact);
+      const candidates = await holders.list(partition);
+      await confirmHolderListing(partition, candidates);
       const verify = async (
         candidate: (typeof candidates)[number],
       ): Promise<ActiveRoleAssignment | null> => {
-        if (candidate.role !== role || !scopesEqual(candidate.scope, exact)) {
+        if (
+          candidate.applicationId !== applicationId ||
+          candidate.role !== role ||
+          !scopesEqual(candidate.scope, exact)
+        ) {
           throw corrupt(`a ${role} holder row disagrees with its partition`);
+        }
+        const pointer = await locate(candidate.assignmentId);
+        if (pointer === null) {
+          throw corrupt(
+            `${candidate.assignmentId} has a holder row without a pointer`,
+          );
+        }
+        requireLocation(
+          candidate,
+          pointer,
+          `${candidate.assignmentId} holder row`,
+        );
+        if (candidate.role !== pointer.role) {
+          throw corrupt(
+            `${candidate.assignmentId} holder row disagrees with its pointer`,
+          );
         }
         // Rows are candidates only. A row whose grant was refused has no
         // lifecycle behind it and reads as nothing.
-        const current = await readAssignment(candidate, candidate.assignmentId);
+        const current = await readAssignment(
+          pointer,
+          candidate.assignmentId,
+          pointer.role,
+        );
         if (current === null) {
           return null;
         }
@@ -490,22 +742,32 @@ export const createRoleStore = (
     async rebuildRoleHolderIndex(): Promise<RebuildRoleHolderIndexResult> {
       // Every assignment ever granted has a pointer, and pointers already
       // carry the location and role a holder row needs.
-      const known = await pointers.list(pointerPartition(applicationId));
+      const partition = pointerPartition(applicationId);
+      const known = await pointers.list(partition);
+      await confirmPointerListing(partition, known);
       let recorded = 0;
       for (const pointer of known) {
         if (pointer.applicationId !== applicationId) {
           throw corrupt(`${pointer.assignmentId} points outside its namespace`);
         }
-        if ((await readAssignment(pointer, pointer.assignmentId)) === null) {
+        if (
+          (await readAssignment(
+            pointer,
+            pointer.assignmentId,
+            pointer.role,
+          )) === null
+        ) {
           continue;
         }
-        const written = await holders.insertIfAbsent({
+        const expectedHolder: StoredRoleHolder = {
           applicationId,
           principalId: pointer.principalId,
           scope: pointer.scope,
           assignmentId: pointer.assignmentId,
           role: pointer.role,
-        });
+        };
+        const written = await holders.insertIfAbsent(expectedHolder);
+        requireHolderKey(written.value, expectedHolder);
         if (written.inserted) {
           recorded += 1;
         }
@@ -520,35 +782,59 @@ export const createRoleStore = (
       if (location === null) {
         return Object.freeze([]);
       }
-      const found = await records.list(recordPartition(location));
-      const positions = found
-        .filter(
+      const current = await readAssignment(
+        location,
+        assignmentId,
+        location.role,
+      );
+      const partition = recordPartition(location);
+      if (current === null) {
+        const positions = (await records.list(partition)).filter(
           (record): record is StoredAudit =>
             record.kind === "audit" && record.assignmentId === assignmentId,
-        )
-        .map(({ sequence }) => sequence)
-        .sort((left, right) => left - right);
-      if (positions.length === 0) {
+        );
+        if (positions.length > 0) {
+          throw corrupt(
+            `${assignmentId} has lifecycle positions without a record`,
+          );
+        }
         return Object.freeze([]);
       }
-
-      const stored = requireAssignment(
-        found.find(
-          (record) =>
-            record.kind === "assignment" &&
-            record.assignment.id === assignmentId,
-        ),
+      requireLifecyclePosition(
+        await records.get({
+          partition,
+          id: auditRecordId(assignmentId, GRANT_SEQUENCE),
+        }),
+        location,
         assignmentId,
+        GRANT_SEQUENCE,
+        current.stored.grantEventId,
       );
-      return Object.freeze(
-        positions.map((sequence) =>
-          freezeAuditRecord(
-            sequence === REVOKE_SEQUENCE
-              ? revokeAuditRecord(stored)
-              : grantAuditRecord(stored),
-          ),
-        ),
+      const grantRecord = freezeAuditRecord(grantAuditRecord(current.stored));
+      const revokePosition = await records.get({
+        partition,
+        id: auditRecordId(assignmentId, REVOKE_SEQUENCE),
+      });
+      if (current.stored.assignment.status === "active") {
+        if (revokePosition !== null) {
+          throw corrupt(`${assignmentId} has a revoke position while active`);
+        }
+        return Object.freeze([grantRecord]);
+      }
+      if (current.stored.revokeEventId === null) {
+        throw corrupt(`${assignmentId} is revoked without a revoke event id`);
+      }
+      requireLifecyclePosition(
+        revokePosition,
+        location,
+        assignmentId,
+        REVOKE_SEQUENCE,
+        current.stored.revokeEventId,
       );
+      return Object.freeze([
+        grantRecord,
+        freezeAuditRecord(revokeAuditRecord(current.stored)),
+      ]);
     },
 
     async grantRoleAssignmentWithAudit(
@@ -574,6 +860,7 @@ export const createRoleStore = (
         assignmentId: assignment.id,
         role: assignment.role,
       });
+      requirePointerKey(pointer.value, applicationId, assignment.id);
       if (
         !pointer.inserted &&
         pointsElsewhere(pointer.value, location, assignment.role)
@@ -583,11 +870,13 @@ export const createRoleStore = (
 
       // Written before the grant, never deleted: the by-role index may
       // over-report a refused grant but can never miss a stored one.
-      await holders.insertIfAbsent({
+      const expectedHolder: StoredRoleHolder = {
         ...location,
         assignmentId: assignment.id,
         role: assignment.role,
-      });
+      };
+      const holder = await holders.insertIfAbsent(expectedHolder);
+      requireHolderKey(holder.value, expectedHolder);
 
       const guard = await records.getVersioned({
         partition,
@@ -596,7 +885,8 @@ export const createRoleStore = (
       const occupant =
         guard === null
           ? null
-          : requireTuple(guard.value, assignment.role).activeAssignmentId;
+          : requireTuple(guard.value, location, assignment.role)
+              .activeAssignmentId;
       if (occupant !== null && occupant !== assignment.id) {
         return conflict("active_tuple");
       }
@@ -614,7 +904,11 @@ export const createRoleStore = (
           auditRecord: freezeAuditRecord(grantAuditRecord(found.stored)),
         });
 
-      const existing = await readAssignment(location, assignment.id);
+      const existing = await readAssignment(
+        location,
+        assignment.id,
+        assignment.role,
+      );
       if (existing !== null) {
         // The lifecycle already exists. An exact replay is unchanged and never
         // reactivates a revoked record; a different event ID for the same ID is
@@ -671,7 +965,11 @@ export const createRoleStore = (
         // first. Which precondition it refused is best-effort information, so
         // decide from the state that actually landed rather than from the
         // rejection.
-        const landed = await readAssignment(location, assignment.id);
+        const landed = await readAssignment(
+          location,
+          assignment.id,
+          assignment.role,
+        );
         if (landed === null) {
           return conflict("active_tuple");
         }
@@ -680,7 +978,11 @@ export const createRoleStore = (
           : conflict("assignment_id");
       }
 
-      const written = await readAssignment(location, assignment.id);
+      const written = await readAssignment(
+        location,
+        assignment.id,
+        assignment.role,
+      );
       if (written === null) {
         throw corrupt(`${assignment.id} vanished after a committed grant`);
       }
@@ -703,7 +1005,11 @@ export const createRoleStore = (
         return Object.freeze({ status: "not_found" });
       }
       const partition = recordPartition(location);
-      const existing = await readAssignment(location, command.assignmentId);
+      const existing = await readAssignment(
+        location,
+        command.assignmentId,
+        location.role,
+      );
       if (existing === null) {
         return Object.freeze({ status: "not_found" });
       }
@@ -741,7 +1047,7 @@ export const createRoleStore = (
           `${current.role} has an active assignment without a guard`,
         );
       }
-      const held = requireTuple(guard.value, current.role);
+      const held = requireTuple(guard.value, location, current.role);
 
       const revoked: RevokedRoleAssignment = {
         ...current,
@@ -796,7 +1102,11 @@ export const createRoleStore = (
         );
       }
 
-      const written = await readAssignment(location, command.assignmentId);
+      const written = await readAssignment(
+        location,
+        command.assignmentId,
+        location.role,
+      );
       if (written === null) {
         throw corrupt(
           `${command.assignmentId} vanished after a committed revoke`,

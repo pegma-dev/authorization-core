@@ -25,6 +25,7 @@ import {
   parseAccessGrantJwks,
   type AccessGrantIssuer,
   type AccessGrantIssuerConfiguration,
+  type IssueAccessGrantInput,
   type SourceAuthorizationSnapshot,
 } from "./index.js";
 import { defaultJwksFetcher, JwksCache } from "./jwks.js";
@@ -389,6 +390,117 @@ describe("@pegma/authorization-tokens issuer", () => {
     expect(Number(payload["exp"]) - Number(payload["iat"])).toBe(25);
   });
 
+  it("requires own source context data properties without invoking accessors", async () => {
+    const values = context();
+    for (const field of [
+      "principalId",
+      "policyVersion",
+      "roles",
+      "entitlements",
+      "permissions",
+    ] as const) {
+      let getterCalls = 0;
+      const supplied = { ...values } as Record<string, unknown>;
+      Object.defineProperty(supplied, field, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          getterCalls += 1;
+          return values[field];
+        },
+      });
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({ context: supplied as unknown as ReturnType<typeof context> }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `context.${field} must be an own data property`,
+      );
+      expect(getterCalls).toBe(0);
+    }
+  });
+
+  it("requires own source context fields instead of inherited values", async () => {
+    const values = context();
+    for (const field of [
+      "principalId",
+      "policyVersion",
+      "roles",
+      "entitlements",
+      "permissions",
+    ] as const) {
+      const prototype = { [field]: values[field] };
+      const supplied = Object.assign(
+        Object.create(prototype),
+        values,
+      ) as Record<string, unknown>;
+      Reflect.deleteProperty(supplied, field);
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({ context: supplied as unknown as ReturnType<typeof context> }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `context.${field} must be an own data property`,
+      );
+    }
+  });
+
+  it("requires own source scope data properties without invoking accessors", async () => {
+    const scopeValues = {
+      kind: "organization",
+      organizationId: "organization-one",
+    } as const;
+    for (const field of ["kind", "organizationId"] as const) {
+      let getterCalls = 0;
+      const supplied = { ...scopeValues } as Record<string, unknown>;
+      Object.defineProperty(supplied, field, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          getterCalls += 1;
+          return scopeValues[field];
+        },
+      });
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({
+          scope: supplied as unknown as SourceAuthorizationSnapshot["scope"],
+        }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `scope.${field} must be an own data property`,
+      );
+      expect(getterCalls).toBe(0);
+    }
+  });
+
+  it("requires own source scope fields instead of inherited values", async () => {
+    const scopeValues = {
+      kind: "organization",
+      organizationId: "organization-one",
+    } as const;
+    for (const field of ["kind", "organizationId"] as const) {
+      const supplied = Object.assign(
+        Object.create({ [field]: scopeValues[field] }),
+        scopeValues,
+      ) as Record<string, unknown>;
+      Reflect.deleteProperty(supplied, field);
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({
+          scope: supplied as unknown as SourceAuthorizationSnapshot["scope"],
+        }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `scope.${field} must be an own data property`,
+      );
+    }
+  });
+
   it("snapshots every issuer configuration and dependency at construction", async () => {
     const configuredPermissions = [permission];
     const configuredPolicies = [
@@ -446,6 +558,103 @@ describe("@pegma/authorization-tokens issuer", () => {
       application_id: applicationId,
       permissions: [permission],
     });
+  });
+
+  it("snapshots issue input data properties once before validation", async () => {
+    const fixture = issuerFixture();
+    const read = await fixture.issuer.readSourceAuthorization();
+    const bound = fixture.issuer.bindSourceAuthorization(read);
+    const firstValues: IssueAccessGrantInput = {
+      audience,
+      requestedPermissions: [permission],
+      source: bound,
+    };
+    const laterValues = {
+      audience: "alternate-api",
+      requestedPermissions: [secondPermission],
+      source: Object.freeze({}),
+    };
+    const descriptorReads = new Map<PropertyKey, number>();
+    const valueReads = new Map<PropertyKey, number>();
+    const input = new Proxy(firstValues, {
+      get(target, property, receiver) {
+        const reads = valueReads.get(property) ?? 0;
+        valueReads.set(property, reads + 1);
+        if (Object.hasOwn(laterValues, property)) {
+          return reads === 0
+            ? Reflect.get(target, property, receiver)
+            : laterValues[property as keyof typeof laterValues];
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+      getOwnPropertyDescriptor(target, property) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+        if (descriptor === undefined || !Object.hasOwn(laterValues, property)) {
+          return descriptor;
+        }
+        const reads = descriptorReads.get(property) ?? 0;
+        descriptorReads.set(property, reads + 1);
+        return {
+          ...descriptor,
+          value:
+            reads === 0
+              ? descriptor.value
+              : laterValues[property as keyof typeof laterValues],
+        };
+      },
+    });
+
+    const compact = await fixture.issuer.issue(input);
+    const payload = JSON.parse(
+      Buffer.from(compact.split(".")[1]!, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+
+    expect(payload["aud"]).toBe(audience);
+    expect(payload["permissions"]).toEqual([permission]);
+    expect(Object.fromEntries(descriptorReads)).toEqual({
+      audience: 1,
+      requestedPermissions: 1,
+      source: 1,
+    });
+    expect(valueReads.size).toBe(0);
+  });
+
+  it("requires own issue input data properties without invoking accessors", async () => {
+    const fixture = issuerFixture();
+    const read = await fixture.issuer.readSourceAuthorization();
+    const bound = fixture.issuer.bindSourceAuthorization(read);
+    const values: IssueAccessGrantInput = {
+      audience,
+      requestedPermissions: [permission],
+      source: bound,
+    };
+
+    for (const field of [
+      "audience",
+      "requestedPermissions",
+      "source",
+    ] as const) {
+      let getterCalls = 0;
+      const input = { ...values } as Record<string, unknown>;
+      Object.defineProperty(input, field, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          getterCalls += 1;
+          return values[field];
+        },
+      });
+
+      await expect(
+        fixture.issuer.issue(input as unknown as IssueAccessGrantInput),
+      ).rejects.toThrow(`${field} must be an own data property`);
+      expect(getterCalls).toBe(0);
+    }
+
+    const inherited = Object.create(values) as IssueAccessGrantInput;
+    await expect(fixture.issuer.issue(inherited)).rejects.toThrow(
+      "audience must be an own data property",
+    );
   });
 
   it("requires six whole seconds, caps nominal life at thirty, and reads wall time first", async () => {

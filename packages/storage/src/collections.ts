@@ -9,6 +9,7 @@ import type {
 } from "@pegma/authorization-contracts";
 import {
   defineCollection,
+  StorageError,
   type EntityKey,
   type StoredRecord,
 } from "@pegma/storage-core";
@@ -23,6 +24,73 @@ import {
  * would be an authorization fault rather than a storage one.
  */
 const KEY_ESCAPES = /[%|/\\#?\u0000-\u001F\u007F-\u009F]/g;
+
+const malformed = (detail: string): never => {
+  throw new StorageError(
+    `authorization storage holds a corrupt record: ${detail}`,
+  );
+};
+
+const readOwnValue = (record: StoredRecord, field: string): unknown => {
+  const descriptor = Object.getOwnPropertyDescriptor(record, field);
+  if (descriptor === undefined || !("value" in descriptor)) {
+    return malformed(`${field} must be an own data field`);
+  }
+  return descriptor.value;
+};
+
+const assertExactFields = (
+  record: StoredRecord,
+  expected: readonly string[],
+): void => {
+  const expectedSet = new Set(expected);
+  const actual = Reflect.ownKeys(record);
+  if (
+    actual.length !== expected.length ||
+    actual.some((field) => typeof field !== "string" || !expectedSet.has(field))
+  ) {
+    malformed(`record fields must be exactly ${expected.join(", ")}`);
+  }
+  for (const field of expected) {
+    readOwnValue(record, field);
+  }
+};
+
+const readString = (record: StoredRecord, field: string): string => {
+  const value = readOwnValue(record, field);
+  if (typeof value !== "string") {
+    return malformed(`${field} must be a string`);
+  }
+  return value;
+};
+
+const readNullableString = (
+  record: StoredRecord,
+  field: string,
+): string | null => {
+  const value = readOwnValue(record, field);
+  if (value !== null && typeof value !== "string") {
+    return malformed(`${field} must be a string or null`);
+  }
+  return value;
+};
+
+const readNonNegativeSafeInteger = (
+  record: StoredRecord,
+  field: string,
+): number => {
+  const value = readOwnValue(record, field);
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    return malformed(`${field} must be a non-negative safe integer`);
+  }
+  return value as number;
+};
+
+const requireNull = (record: StoredRecord, field: string): void => {
+  if (readOwnValue(record, field) !== null) {
+    malformed(`${field} must be null`);
+  }
+};
 
 function encodeSegment(value: string): string {
   // `%` is escaped by the same rule, and because it is listed first in the
@@ -165,12 +233,19 @@ function decodeActor(
   record: StoredRecord,
   prefix: string,
 ): RoleAssignmentActor {
-  return record[`${prefix}Kind`] === "system"
-    ? { kind: "system", systemId: String(record[`${prefix}SystemId`]) }
-    : {
-        kind: "principal",
-        principalId: String(record[`${prefix}PrincipalId`]),
-      };
+  const kind = readString(record, `${prefix}Kind`);
+  if (kind === "system") {
+    requireNull(record, `${prefix}PrincipalId`);
+    return { kind, systemId: readString(record, `${prefix}SystemId`) };
+  }
+  if (kind === "principal") {
+    requireNull(record, `${prefix}SystemId`);
+    return {
+      kind,
+      principalId: readString(record, `${prefix}PrincipalId`),
+    };
+  }
+  return malformed(`${prefix}Kind must name a known actor kind`);
 }
 
 function encodeLocation(location: RecordLocation): StoredRecord {
@@ -186,15 +261,24 @@ function encodeLocation(location: RecordLocation): StoredRecord {
 }
 
 function decodeScope(record: StoredRecord): RoleAssignmentScope {
-  return record["scopeKind"] === "organization"
-    ? { kind: "organization", organizationId: String(record["organizationId"]) }
-    : { kind: "application" };
+  const kind = readString(record, "scopeKind");
+  if (kind === "organization") {
+    return {
+      kind,
+      organizationId: readString(record, "organizationId"),
+    };
+  }
+  if (kind === "application") {
+    requireNull(record, "organizationId");
+    return { kind };
+  }
+  return malformed("scopeKind must name a known scope kind");
 }
 
 function decodeLocation(record: StoredRecord): RecordLocation {
   return {
-    applicationId: String(record["applicationId"]),
-    principalId: String(record["principalId"]),
+    applicationId: readString(record, "applicationId"),
+    principalId: readString(record, "principalId"),
     scope: decodeScope(record),
   };
 }
@@ -224,36 +308,111 @@ function encodeAssignment(stored: StoredAssignment): StoredRecord {
   };
 }
 
+const LOCATION_FIELDS = [
+  "applicationId",
+  "principalId",
+  "scopeKind",
+  "organizationId",
+] as const;
+
+const ASSIGNMENT_FIELDS = [
+  "kind",
+  ...LOCATION_FIELDS,
+  "assignmentId",
+  "role",
+  "status",
+  "grantedAtEpochMs",
+  "grantedByKind",
+  "grantedByPrincipalId",
+  "grantedBySystemId",
+  "revokedAtEpochMs",
+  "revokedByKind",
+  "revokedByPrincipalId",
+  "revokedBySystemId",
+  "reason",
+  "grantEventId",
+  "revokeEventId",
+] as const;
+
+const TUPLE_FIELDS = [
+  "kind",
+  ...LOCATION_FIELDS,
+  "role",
+  "activeAssignmentId",
+] as const;
+
+const AUDIT_FIELDS = [
+  "kind",
+  ...LOCATION_FIELDS,
+  "assignmentId",
+  "sequence",
+  "eventId",
+] as const;
+
+const POINTER_FIELDS = [...LOCATION_FIELDS, "assignmentId", "role"] as const;
+
+const IDENTITY_LINK_FIELDS = [
+  "applicationId",
+  "issuer",
+  "subject",
+  "principalId",
+] as const;
+
 function decodeAssignment(record: StoredRecord): StoredAssignment {
+  assertExactFields(record, ASSIGNMENT_FIELDS);
   const location = decodeLocation(record);
+  const grantedAtEpochMs = readNonNegativeSafeInteger(
+    record,
+    "grantedAtEpochMs",
+  );
   const grant = {
-    id: String(record["assignmentId"]),
+    id: readString(record, "assignmentId"),
     principalId: location.principalId,
-    role: String(record["role"]),
+    role: readString(record, "role"),
     scope: location.scope,
     grantedBy: decodeActor(record, "grantedBy"),
-    grantedAtEpochMs: Number(record["grantedAtEpochMs"]),
+    grantedAtEpochMs,
   };
 
-  const reason = record["reason"];
-  const assignment: RoleAssignment =
-    record["status"] === "revoked"
-      ? {
-          ...grant,
-          status: "revoked",
-          revokedBy: decodeActor(record, "revokedBy"),
-          revokedAtEpochMs: Number(record["revokedAtEpochMs"]),
-          ...(reason == null ? {} : { reason: String(reason) }),
-        }
-      : { ...grant, status: "active" };
+  const status = readString(record, "status");
+  let assignment: RoleAssignment;
+  let revokeEventId: string | null;
+  if (status === "active") {
+    requireNull(record, "revokedAtEpochMs");
+    requireNull(record, "revokedByKind");
+    requireNull(record, "revokedByPrincipalId");
+    requireNull(record, "revokedBySystemId");
+    requireNull(record, "reason");
+    requireNull(record, "revokeEventId");
+    assignment = { ...grant, status };
+    revokeEventId = null;
+  } else if (status === "revoked") {
+    const revokedAtEpochMs = readNonNegativeSafeInteger(
+      record,
+      "revokedAtEpochMs",
+    );
+    if (revokedAtEpochMs < grantedAtEpochMs) {
+      return malformed("revokedAtEpochMs must not precede grantedAtEpochMs");
+    }
+    const reason = readNullableString(record, "reason");
+    revokeEventId = readString(record, "revokeEventId");
+    assignment = {
+      ...grant,
+      status,
+      revokedBy: decodeActor(record, "revokedBy"),
+      revokedAtEpochMs,
+      ...(reason === null ? {} : { reason }),
+    };
+  } else {
+    return malformed("status must be active or revoked");
+  }
 
-  const revokeEventId = record["revokeEventId"];
   return {
     kind: "assignment",
     ...location,
     assignment,
-    grantEventId: String(record["grantEventId"]),
-    revokeEventId: revokeEventId == null ? null : String(revokeEventId),
+    grantEventId: readString(record, "grantEventId"),
+    revokeEventId,
   };
 }
 
@@ -297,26 +456,34 @@ export const authorizationRecords = defineCollection<AuthorizationRecord>({
       };
     },
     decode: (record) => {
-      if (record["kind"] === "assignment") {
+      const kind = readString(record, "kind");
+      if (kind === "assignment") {
         return decodeAssignment(record);
       }
-      if (record["kind"] === "tuple") {
-        const activeAssignmentId = record["activeAssignmentId"];
+      if (kind === "tuple") {
+        assertExactFields(record, TUPLE_FIELDS);
         return {
-          kind: "tuple",
+          kind,
           ...decodeLocation(record),
-          role: String(record["role"]),
-          activeAssignmentId:
-            activeAssignmentId == null ? null : String(activeAssignmentId),
+          role: readString(record, "role"),
+          activeAssignmentId: readNullableString(record, "activeAssignmentId"),
         };
       }
-      return {
-        kind: "audit",
-        ...decodeLocation(record),
-        assignmentId: String(record["assignmentId"]),
-        sequence: Number(record["sequence"]),
-        eventId: String(record["eventId"]),
-      };
+      if (kind === "audit") {
+        assertExactFields(record, AUDIT_FIELDS);
+        const sequence = readNonNegativeSafeInteger(record, "sequence");
+        if (sequence !== GRANT_SEQUENCE && sequence !== REVOKE_SEQUENCE) {
+          return malformed("sequence must name a known lifecycle position");
+        }
+        return {
+          kind,
+          ...decodeLocation(record),
+          assignmentId: readString(record, "assignmentId"),
+          sequence,
+          eventId: readString(record, "eventId"),
+        };
+      }
+      return malformed("kind must name a known authorization record kind");
     },
   },
 });
@@ -347,11 +514,14 @@ export const assignmentPointers = defineCollection<StoredAssignmentPointer>({
       assignmentId: pointer.assignmentId,
       role: pointer.role,
     }),
-    decode: (record) => ({
-      ...decodeLocation(record),
-      assignmentId: String(record["assignmentId"]),
-      role: String(record["role"]),
-    }),
+    decode: (record) => {
+      assertExactFields(record, POINTER_FIELDS);
+      return {
+        ...decodeLocation(record),
+        assignmentId: readString(record, "assignmentId"),
+        role: readString(record, "role"),
+      };
+    },
   },
 });
 
@@ -416,11 +586,14 @@ export const roleHolders = defineCollection<StoredRoleHolder>({
       assignmentId: holder.assignmentId,
       role: holder.role,
     }),
-    decode: (record) => ({
-      ...decodeLocation(record),
-      assignmentId: String(record["assignmentId"]),
-      role: String(record["role"]),
-    }),
+    decode: (record) => {
+      assertExactFields(record, POINTER_FIELDS);
+      return {
+        ...decodeLocation(record),
+        assignmentId: readString(record, "assignmentId"),
+        role: readString(record, "role"),
+      };
+    },
   },
 });
 
@@ -451,16 +624,19 @@ export const identityLinks = defineCollection<StoredIdentityLink>({
       subject: stored.link.key.subject,
       principalId: stored.link.principalId,
     }),
-    decode: (record) => ({
-      applicationId: String(record["applicationId"]),
-      link: {
-        key: {
-          issuer: String(record["issuer"]),
-          subject: String(record["subject"]),
+    decode: (record) => {
+      assertExactFields(record, IDENTITY_LINK_FIELDS);
+      return {
+        applicationId: readString(record, "applicationId"),
+        link: {
+          key: {
+            issuer: readString(record, "issuer"),
+            subject: readString(record, "subject"),
+          },
+          principalId: readString(record, "principalId"),
         },
-        principalId: String(record["principalId"]),
-      },
-    }),
+      };
+    },
   },
 });
 
