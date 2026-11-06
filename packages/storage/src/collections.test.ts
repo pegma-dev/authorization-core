@@ -5,6 +5,8 @@ import {
   createMemoryStore,
   defineCollection,
   StorageError,
+  type CollectionDefinition,
+  type CollectionStore,
   type EntityKey,
   type Store,
   type StoredRecord,
@@ -25,6 +27,7 @@ import {
   roleHolderPartition,
   roleHolders,
   tupleRecordId,
+  type AuthorizationRecord,
   type RecordLocation,
   type StoredAssignment,
   type StoredAssignmentPointer,
@@ -33,7 +36,7 @@ import {
   type StoredRoleHolder,
   type StoredTuple,
 } from "./collections.js";
-import { createRoleStore } from "./role-store.js";
+import { createRoleStore, storedRecordsEqual } from "./role-store.js";
 
 const APPLICATION_ID = "application_one";
 const ASSIGNMENT_ID = "assignment_one";
@@ -120,6 +123,23 @@ const putAssignment = (
     record,
   );
 
+const wrapAuthorizationRecords = (
+  store: Store,
+  wrap: (
+    collection: CollectionStore<AuthorizationRecord>,
+  ) => CollectionStore<AuthorizationRecord>,
+): Store => ({
+  collection<T>(definition: CollectionDefinition<T>): CollectionStore<T> {
+    const collection = store.collection(definition);
+    if (definition.name !== authorizationRecords.name) {
+      return collection;
+    }
+    return wrap(
+      collection as unknown as CollectionStore<AuthorizationRecord>,
+    ) as unknown as CollectionStore<T>;
+  },
+});
+
 const requireGrant = async (store: Store) => {
   const adapter = createRoleStore(store, APPLICATION_ID);
   const result = await adapter.grantRoleAssignmentWithAudit({
@@ -186,6 +206,19 @@ describe("storage collection codecs", () => {
     expect(() =>
       authorizationRecords.codec.decode(record as StoredRecord),
     ).toThrow(StorageError);
+  });
+
+  it("treats symbol-bearing stored records as unequal", () => {
+    const extra = Symbol("extra");
+    const clean = { field: "value" } as StoredRecord;
+    const withSymbol = {
+      field: "value",
+      [extra]: "extra",
+    } as unknown as StoredRecord;
+
+    expect(storedRecordsEqual(clean, withSymbol)).toBe(false);
+    expect(storedRecordsEqual(withSymbol, clean)).toBe(false);
+    expect(storedRecordsEqual(withSymbol, withSymbol)).toBe(false);
   });
 
   it("rejects unknown record kinds and lifecycle positions", () => {
@@ -292,7 +325,75 @@ describe("storage record bindings", () => {
         PRINCIPAL_ID,
         applicationScope,
       ),
-    ).rejects.toBeInstanceOf(StorageError);
+    ).rejects.toThrow("changed during read; retry");
+  });
+
+  it("reports a retry when a listed row changes before confirmation", async () => {
+    const base = createMemoryStore();
+    await putAssignment(base);
+    let listed = false;
+    const store = wrapAuthorizationRecords(base, (collection) => ({
+      ...collection,
+      async list(partition) {
+        const found = await collection.list(partition);
+        listed = true;
+        return found;
+      },
+      async get(key) {
+        return listed ? null : collection.get(key);
+      },
+    }));
+
+    await expect(
+      createRoleStore(store, APPLICATION_ID).listRoleAssignments(
+        PRINCIPAL_ID,
+        applicationScope,
+      ),
+    ).rejects.toThrow("changed during read; retry");
+  });
+
+  it("confirms principal listing rows in bounded batches", async () => {
+    const base = createMemoryStore();
+    const writer = createRoleStore(base, APPLICATION_ID);
+    for (let index = 0; index < 17; index += 1) {
+      const next = {
+        ...assignment,
+        id: `assignment_${String(index)}`,
+        role: `role_${String(index)}`,
+      };
+      const result = await writer.grantRoleAssignmentWithAudit({
+        assignment: next,
+        auditEventId: `grant_${String(index)}`,
+      });
+      expect(result.status).toBe("granted");
+    }
+
+    let active = 0;
+    let maximum = 0;
+    let calls = 0;
+    const store = wrapAuthorizationRecords(base, (collection) => ({
+      ...collection,
+      async get(key) {
+        active += 1;
+        calls += 1;
+        maximum = Math.max(maximum, active);
+        await Promise.resolve();
+        try {
+          return await collection.get(key);
+        } finally {
+          active -= 1;
+        }
+      },
+    }));
+
+    await expect(
+      createRoleStore(store, APPLICATION_ID).listRoleAssignments(
+        PRINCIPAL_ID,
+        applicationScope,
+      ),
+    ).resolves.toHaveLength(17);
+    expect(calls).toBe(51);
+    expect(maximum).toBe(16);
   });
 
   it.each([
@@ -394,7 +495,7 @@ describe("storage record bindings", () => {
           PRINCIPAL_ID,
           applicationScope,
         ),
-      ).rejects.toBeInstanceOf(StorageError);
+      ).rejects.toThrow("corrupt record");
     },
   );
 
@@ -546,6 +647,60 @@ describe("storage record bindings", () => {
     );
     await expect(
       adapter.listRoleAssignmentAuditEvents(ASSIGNMENT_ID),
+    ).rejects.toBeInstanceOf(StorageError);
+  });
+
+  it("rejects lifecycle positions without their assignment row", async () => {
+    const store = createMemoryStore();
+    await putPointer(store);
+    const lifecyclePosition: StoredAudit = {
+      kind: "audit",
+      ...location,
+      assignmentId: ASSIGNMENT_ID,
+      sequence: GRANT_SEQUENCE,
+      eventId: GRANT_EVENT_ID,
+    };
+    await putRaw(
+      store,
+      authorizationRecords.name,
+      {
+        partition: recordPartition(location),
+        id: auditRecordId(ASSIGNMENT_ID, GRANT_SEQUENCE),
+      },
+      authorizationRecords.codec.encode(lifecyclePosition),
+    );
+
+    await expect(
+      createRoleStore(store, APPLICATION_ID).listRoleAssignmentAuditEvents(
+        ASSIGNMENT_ID,
+      ),
+    ).rejects.toBeInstanceOf(StorageError);
+  });
+
+  it("rejects a miskeyed lifecycle position without its assignment row", async () => {
+    const store = createMemoryStore();
+    await putPointer(store);
+    const lifecyclePosition: StoredAudit = {
+      kind: "audit",
+      ...location,
+      assignmentId: ASSIGNMENT_ID,
+      sequence: GRANT_SEQUENCE,
+      eventId: GRANT_EVENT_ID,
+    };
+    await putRaw(
+      store,
+      authorizationRecords.name,
+      {
+        partition: recordPartition(location),
+        id: auditRecordId("assignment_two", GRANT_SEQUENCE),
+      },
+      authorizationRecords.codec.encode(lifecyclePosition),
+    );
+
+    await expect(
+      createRoleStore(store, APPLICATION_ID).listRoleAssignmentAuditEvents(
+        ASSIGNMENT_ID,
+      ),
     ).rejects.toBeInstanceOf(StorageError);
   });
 });

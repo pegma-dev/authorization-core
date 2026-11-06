@@ -112,9 +112,10 @@ function invalidResult(
 }
 
 function plainRecordIssue(value: object): string | undefined {
+  const prototype = Object.getPrototypeOf(value);
   if (
     Array.isArray(value) ||
-    Object.getPrototypeOf(value) !== Object.prototype
+    (prototype !== Object.prototype && prototype !== null)
   ) {
     return "Expected an ordinary JSON object.";
   }
@@ -489,9 +490,10 @@ function validatePolicyInternal(input: unknown): PolicyValidationResult {
 /**
  * Validate an already parsed policy value without returning a partial policy.
  *
- * The input must have the same ordinary data-property shape produced by
- * JSON.parse. Unexpected proxies or reflective failures are reported as an
- * invalid structure rather than escaping the fail-closed boundary.
+ * The input must use enumerable data properties and either the ordinary JSON
+ * object prototype or a null prototype. Unexpected proxies or reflective
+ * failures are reported as an invalid structure rather than escaping the
+ * fail-closed boundary.
  */
 export function validatePolicy(input: unknown): PolicyValidationResult {
   try {

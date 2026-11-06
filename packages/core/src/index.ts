@@ -80,8 +80,19 @@ function copyStringArrayValue(candidate: unknown, label: string): string[] {
     throw new TypeError(`${label} must be an array of strings`);
   }
 
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(candidate, "length");
+  if (
+    lengthDescriptor === undefined ||
+    !("value" in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== "number" ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0
+  ) {
+    throw new TypeError(`${label} must be a dense array of strings`);
+  }
+
   const copy: string[] = [];
-  for (let index = 0; index < candidate.length; index += 1) {
+  for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(candidate, index);
     if (
       descriptor === undefined ||

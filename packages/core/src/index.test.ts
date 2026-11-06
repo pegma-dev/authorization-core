@@ -317,6 +317,82 @@ describe("resolveAccess", () => {
     expect(roleGetterRead).toBe(false);
   });
 
+  it("reads array length from its own data descriptor", () => {
+    let directLengthReads = 0;
+    const roles = new Proxy(["support"], {
+      get(target, property, receiver) {
+        if (property === "length") {
+          directLengthReads += 1;
+          throw new Error("array length was read directly");
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+
+    const context = resolveAccess(
+      { principalId: "principal-array-length", roles },
+      policy,
+    );
+
+    expect(context.roles).toEqual(["support"]);
+    expect(context.permissions).toContain("support.queue.read");
+    expect(directLengthReads).toBe(0);
+  });
+
+  it("treats own undefined optional fields as absent", () => {
+    const context = resolveAccess(
+      {
+        principalId: "principal-undefined-optionals",
+        roles: undefined,
+        entitlements: undefined,
+      } as unknown as AccessSubject,
+      {
+        version: "undefined-optionals-1",
+        defaults: undefined,
+        roles: undefined,
+        entitlements: undefined,
+      } as unknown as AccessPolicy,
+    );
+
+    expect(context).toEqual({
+      principalId: "principal-undefined-optionals",
+      policyVersion: "undefined-optionals-1",
+      roles: [],
+      entitlements: [],
+      permissions: [],
+    });
+  });
+
+  it("rejects null role and entitlement entries", () => {
+    const nullRoles = { support: null } as unknown as Record<
+      string,
+      readonly string[]
+    >;
+    const nullEntitlements = { "plan.pro": null } as unknown as Record<
+      string,
+      readonly string[]
+    >;
+
+    expect(() =>
+      resolveAccess(
+        { principalId: "principal-null-role", roles: ["support"] },
+        { version: "null-role-1", roles: nullRoles },
+      ),
+    ).toThrowError("policy.roles.support must be an array of strings");
+    expect(() =>
+      resolveAccess(
+        {
+          principalId: "principal-null-entitlement",
+          entitlements: ["plan.pro"],
+        },
+        {
+          version: "null-entitlement-1",
+          entitlements: nullEntitlements,
+        },
+      ),
+    ).toThrowError("policy.entitlements.plan.pro must be an array of strings");
+  });
+
   it("rejects empty identifiers and permission names", () => {
     expect(() => resolveAccess({ principalId: " " }, policy)).toThrowError(
       "principalId must not be empty",

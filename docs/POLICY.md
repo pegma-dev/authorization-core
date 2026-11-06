@@ -72,12 +72,19 @@ A policy version is 1–128 ASCII characters and matches:
 ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$
 ```
 
-The `defaults`, `roles`, and `entitlements` sections are optional. Present
-sections must use arrays and objects exactly as shown; `null`, sparse arrays,
-accessors, inherited configuration, custom prototypes, symbols, and non-JSON
-values are rejected. Successful validation returns a detached, deeply frozen
-copy so later mutation of the decoded input cannot change authorization
-behavior.
+The `defaults`, `roles`, and `entitlements` sections are optional. Present grant
+lists must be ordinary dense arrays, while the document and mapping objects may
+use either `Object.prototype` or a null prototype. `null`, accessors, inherited
+configuration, symbols, non-JSON values, and other prototypes are rejected.
+Successful validation returns a detached, deeply frozen copy with a null
+prototype, so later mutation of the decoded input cannot change authorization
+behavior. Parsed output may be passed directly to `validatePolicy` or
+`parsePolicy` again.
+
+Core resolution reads optional subject and policy fields only from own data
+properties. Inherited optional fields are ignored, and an own optional field
+whose value is `undefined` is treated as absent. A present role or entitlement
+map entry must be an array; `null` entries are rejected.
 
 ## Permission names
 

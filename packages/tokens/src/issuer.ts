@@ -184,15 +184,36 @@ function snapshotContext(value: AccessContext): AccessContext {
   if (typeof value !== "object" || value === null) {
     fail("source access context must be an object");
   }
+  const principalId = ownDataProperty(
+    value,
+    "principalId",
+    "context.principalId",
+  );
+  const policyVersion = ownDataProperty(
+    value,
+    "policyVersion",
+    "context.policyVersion",
+  );
+  const roles = ownDataProperty(value, "roles", "context.roles");
+  const entitlements = ownDataProperty(
+    value,
+    "entitlements",
+    "context.entitlements",
+  );
+  const permissions = ownDataProperty(
+    value,
+    "permissions",
+    "context.permissions",
+  );
+  if (typeof principalId !== "string" || typeof policyVersion !== "string") {
+    fail("source access context identifiers must be strings");
+  }
   return Object.freeze({
-    principalId: value.principalId,
-    policyVersion: value.policyVersion,
-    roles: snapshotStringArray(value.roles, "context.roles"),
-    entitlements: snapshotStringArray(
-      value.entitlements,
-      "context.entitlements",
-    ),
-    permissions: snapshotStringArray(value.permissions, "context.permissions"),
+    principalId,
+    policyVersion,
+    roles: snapshotStringArray(roles, "context.roles"),
+    entitlements: snapshotStringArray(entitlements, "context.entitlements"),
+    permissions: snapshotStringArray(permissions, "context.permissions"),
   });
 }
 
@@ -200,17 +221,22 @@ function snapshotScope(value: AccessGrantSourceScope): AccessGrantSourceScope {
   if (typeof value !== "object" || value === null) {
     fail("source scope must be an object");
   }
-  if (value.kind === "application") {
+  const kind = ownDataProperty(value, "kind", "scope.kind");
+  if (kind === "application") {
     return Object.freeze({ kind: "application" });
   }
-  if (
-    value.kind === "organization" &&
-    typeof value.organizationId === "string" &&
-    value.organizationId.length > 0
-  ) {
+  if (kind === "organization") {
+    const organizationId = ownDataProperty(
+      value,
+      "organizationId",
+      "scope.organizationId",
+    );
+    if (typeof organizationId !== "string" || organizationId.length === 0) {
+      fail("source scope is malformed");
+    }
     return Object.freeze({
       kind: "organization",
-      organizationId: value.organizationId,
+      organizationId,
     });
   }
   fail("source scope is malformed");

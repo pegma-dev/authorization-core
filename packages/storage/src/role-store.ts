@@ -158,6 +158,9 @@ const freezeAuditRecord = (
 /** Authoritative point reads issued concurrently by one by-role read. */
 const HOLDER_VERIFY_BATCH = 16;
 
+/** Point confirmations issued concurrently by one principal listing. */
+const RECORD_CONFIRM_BATCH = 16;
+
 const byGrantThenId = (left: RoleAssignment, right: RoleAssignment): number =>
   left.grantedAtEpochMs !== right.grantedAtEpochMs
     ? left.grantedAtEpochMs - right.grantedAtEpochMs
@@ -236,16 +239,30 @@ const snapshotRevokeCommand = (
 const corrupt = (detail: string): StorageError =>
   new StorageError(`authorization storage holds a corrupt record: ${detail}`);
 
-const storedRecordsEqual = (
+const changedDuringRead = (detail: string): StorageError =>
+  new StorageError(
+    `authorization storage changed during read; retry: ${detail}`,
+  );
+
+export const storedRecordsEqual = (
   left: StoredRecord,
   right: StoredRecord,
 ): boolean => {
-  const leftFields = Object.keys(left);
-  const rightFields = Object.keys(right);
+  const leftFields = Reflect.ownKeys(left);
+  const rightFields = Reflect.ownKeys(right);
+  if (
+    leftFields.some((field) => typeof field !== "string") ||
+    rightFields.some((field) => typeof field !== "string")
+  ) {
+    return false;
+  }
   return (
     leftFields.length === rightFields.length &&
     leftFields.every(
-      (field) => Object.hasOwn(right, field) && left[field] === right[field],
+      (field) =>
+        typeof field === "string" &&
+        Object.hasOwn(right, field) &&
+        left[field] === right[field],
     )
   );
 };
@@ -410,22 +427,29 @@ export const createRoleStore = (
     found: readonly AuthorizationRecord[],
   ): Promise<void> => {
     const ids = new Set<string>();
-    for (const record of found) {
+    const keyed = found.map((record) => {
       const key = authorizationRecords.key(record);
       if (key.partition !== partition || ids.has(key.id)) {
         throw corrupt("an authorization row disagrees with its physical key");
       }
       ids.add(key.id);
-      const confirmed = await records.get(key);
-      if (
-        confirmed === null ||
-        !storedRecordsEqual(
-          authorizationRecords.codec.encode(record),
-          authorizationRecords.codec.encode(confirmed),
-        )
-      ) {
-        throw corrupt("an authorization row disagrees with its physical key");
-      }
+      return { key, record };
+    });
+    for (let start = 0; start < keyed.length; start += RECORD_CONFIRM_BATCH) {
+      await Promise.all(
+        keyed.slice(start, start + RECORD_CONFIRM_BATCH).map(async (listed) => {
+          const confirmed = await records.get(listed.key);
+          if (
+            confirmed === null ||
+            !storedRecordsEqual(
+              authorizationRecords.codec.encode(listed.record),
+              authorizationRecords.codec.encode(confirmed),
+            )
+          ) {
+            throw changedDuringRead("an authorization row moved");
+          }
+        }),
+      );
     }
   };
 
@@ -448,7 +472,7 @@ export const createRoleStore = (
           roleHolders.codec.encode(confirmed),
         )
       ) {
-        throw corrupt("a role-holder row disagrees with its physical key");
+        throw changedDuringRead("a role-holder row moved");
       }
     }
   };
@@ -472,7 +496,7 @@ export const createRoleStore = (
           assignmentPointers.codec.encode(confirmed),
         )
       ) {
-        throw corrupt("an assignment pointer disagrees with its physical key");
+        throw changedDuringRead("an assignment pointer moved");
       }
     }
   };
@@ -763,11 +787,20 @@ export const createRoleStore = (
         assignmentId,
         location.role,
       );
+      const partition = recordPartition(location);
       if (current === null) {
+        const positions = (await records.list(partition)).filter(
+          (record): record is StoredAudit =>
+            record.kind === "audit" && record.assignmentId === assignmentId,
+        );
+        if (positions.length > 0) {
+          throw corrupt(
+            `${assignmentId} has lifecycle positions without a record`,
+          );
+        }
         return Object.freeze([]);
       }
-      const partition = recordPartition(location);
-      const grantPosition = requireLifecyclePosition(
+      requireLifecyclePosition(
         await records.get({
           partition,
           id: auditRecordId(assignmentId, GRANT_SEQUENCE),
@@ -778,9 +811,6 @@ export const createRoleStore = (
         current.stored.grantEventId,
       );
       const grantRecord = freezeAuditRecord(grantAuditRecord(current.stored));
-      if (grantPosition.sequence !== grantRecord.sequence) {
-        throw corrupt(`${assignmentId} has an invalid grant position`);
-      }
       const revokePosition = await records.get({
         partition,
         id: auditRecordId(assignmentId, REVOKE_SEQUENCE),

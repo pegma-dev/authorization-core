@@ -355,9 +355,11 @@ not a snapshot, and a read that begins before a revocation may still observe
 the assignment as active.
 
 Each decoded row is confirmed through its recomputed exact record key before it
-is used. A missing, duplicate, or inconsistent confirmation rejects the read.
-This confirmation is still not a snapshot, and a concurrent change between the
-partition listing and point confirmation may cause the read to reject.
+is used, with point reads issued in batches of 16. A key outside the requested
+partition or a duplicate recomputed key rejects as malformed. If a row vanishes
+or changes between the partition listing and point confirmation, the read
+rejects with a retry-oriented storage error. This confirmation is still not a
+snapshot.
 
 The host's cache generation fence is therefore load-bearing rather than
 belt-and-braces. A fill must capture all applicable generations before its

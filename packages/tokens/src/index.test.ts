@@ -390,6 +390,117 @@ describe("@pegma/authorization-tokens issuer", () => {
     expect(Number(payload["exp"]) - Number(payload["iat"])).toBe(25);
   });
 
+  it("requires own source context data properties without invoking accessors", async () => {
+    const values = context();
+    for (const field of [
+      "principalId",
+      "policyVersion",
+      "roles",
+      "entitlements",
+      "permissions",
+    ] as const) {
+      let getterCalls = 0;
+      const supplied = { ...values } as Record<string, unknown>;
+      Object.defineProperty(supplied, field, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          getterCalls += 1;
+          return values[field];
+        },
+      });
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({ context: supplied as unknown as ReturnType<typeof context> }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `context.${field} must be an own data property`,
+      );
+      expect(getterCalls).toBe(0);
+    }
+  });
+
+  it("requires own source context fields instead of inherited values", async () => {
+    const values = context();
+    for (const field of [
+      "principalId",
+      "policyVersion",
+      "roles",
+      "entitlements",
+      "permissions",
+    ] as const) {
+      const prototype = { [field]: values[field] };
+      const supplied = Object.assign(
+        Object.create(prototype),
+        values,
+      ) as Record<string, unknown>;
+      Reflect.deleteProperty(supplied, field);
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({ context: supplied as unknown as ReturnType<typeof context> }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `context.${field} must be an own data property`,
+      );
+    }
+  });
+
+  it("requires own source scope data properties without invoking accessors", async () => {
+    const scopeValues = {
+      kind: "organization",
+      organizationId: "organization-one",
+    } as const;
+    for (const field of ["kind", "organizationId"] as const) {
+      let getterCalls = 0;
+      const supplied = { ...scopeValues } as Record<string, unknown>;
+      Object.defineProperty(supplied, field, {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          getterCalls += 1;
+          return scopeValues[field];
+        },
+      });
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({
+          scope: supplied as unknown as SourceAuthorizationSnapshot["scope"],
+        }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `scope.${field} must be an own data property`,
+      );
+      expect(getterCalls).toBe(0);
+    }
+  });
+
+  it("requires own source scope fields instead of inherited values", async () => {
+    const scopeValues = {
+      kind: "organization",
+      organizationId: "organization-one",
+    } as const;
+    for (const field of ["kind", "organizationId"] as const) {
+      const supplied = Object.assign(
+        Object.create({ [field]: scopeValues[field] }),
+        scopeValues,
+      ) as Record<string, unknown>;
+      Reflect.deleteProperty(supplied, field);
+      const fixture = issuerFixture();
+      fixture.setSource(
+        source({
+          scope: supplied as unknown as SourceAuthorizationSnapshot["scope"],
+        }),
+      );
+
+      await expect(fixture.issuer.readSourceAuthorization()).rejects.toThrow(
+        `scope.${field} must be an own data property`,
+      );
+    }
+  });
+
   it("snapshots every issuer configuration and dependency at construction", async () => {
     const configuredPermissions = [permission];
     const configuredPolicies = [
