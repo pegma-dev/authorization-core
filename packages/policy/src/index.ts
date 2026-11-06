@@ -461,16 +461,15 @@ function validatePolicyInternal(input: unknown): PolicyValidationResult {
     return invalidResult(diagnostics);
   }
 
-  const policy: {
+  const policy = Object.create(null) as {
     schemaVersion: typeof POLICY_SCHEMA_VERSION;
     version: string;
     defaults?: readonly PermissionName[];
     roles?: Readonly<Record<RoleName, readonly PermissionName[]>>;
     entitlements?: Readonly<Record<EntitlementName, readonly PermissionName[]>>;
-  } = {
-    schemaVersion: POLICY_SCHEMA_VERSION,
-    version,
   };
+  policy.schemaVersion = POLICY_SCHEMA_VERSION;
+  policy.version = version;
   if (defaults !== undefined) {
     policy.defaults = defaults;
   }

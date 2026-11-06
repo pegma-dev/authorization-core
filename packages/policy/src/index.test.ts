@@ -33,6 +33,7 @@ describe("PolicyDocumentV1", () => {
 
     expect(policy).toEqual({ schemaVersion: 1, version: "v1" });
     expect(policy.schemaVersion).toBe(POLICY_SCHEMA_VERSION);
+    expect(Object.getPrototypeOf(policy)).toBeNull();
     expect(Object.isFrozen(policy)).toBe(true);
   });
 

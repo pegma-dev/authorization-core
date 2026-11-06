@@ -7,7 +7,7 @@ import {
   resolveAccessWithDiagnostics,
   serializeAccessContext,
 } from "./index.js";
-import type { AccessContext } from "./index.js";
+import type { AccessContext, AccessPolicy, AccessSubject } from "./index.js";
 
 const policy = {
   version: "test-1",
@@ -123,6 +123,198 @@ describe("resolveAccess", () => {
     expect(context.roles).toEqual(["__proto__", "constructor"]);
     expect(context.entitlements).toEqual(["hasOwnProperty", "toString"]);
     expect(context.permissions).toEqual(["account.read.own"]);
+  });
+
+  it("treats optional fields inherited from custom prototypes as absent", () => {
+    let inheritedGetterReads = 0;
+    const subjectPrototype = Object.defineProperties(
+      {},
+      {
+        roles: {
+          get() {
+            inheritedGetterReads += 1;
+            return ["support"];
+          },
+        },
+        entitlements: {
+          get() {
+            inheritedGetterReads += 1;
+            return ["plan.pro"];
+          },
+        },
+      },
+    );
+    const policyPrototype = Object.defineProperties(
+      {},
+      {
+        defaults: {
+          get() {
+            inheritedGetterReads += 1;
+            return ["account.read.own"];
+          },
+        },
+        roles: {
+          get() {
+            inheritedGetterReads += 1;
+            return { support: ["support.queue.read"] };
+          },
+        },
+        entitlements: {
+          get() {
+            inheritedGetterReads += 1;
+            return { "plan.pro": ["support.ticket.create"] };
+          },
+        },
+      },
+    );
+    const subject = Object.assign(Object.create(subjectPrototype), {
+      principalId: "principal-custom-prototype",
+    }) as AccessSubject;
+    const inheritedPolicy = Object.assign(Object.create(policyPrototype), {
+      version: "custom-prototype-1",
+    }) as AccessPolicy;
+
+    expect(resolveAccess(subject, inheritedPolicy)).toEqual({
+      principalId: "principal-custom-prototype",
+      policyVersion: "custom-prototype-1",
+      roles: [],
+      entitlements: [],
+      permissions: [],
+    });
+    expect(inheritedGetterReads).toBe(0);
+  });
+
+  it("treats optional fields inherited from Object.prototype as absent", () => {
+    const fields = ["defaults", "roles", "entitlements"] as const;
+    const originalDescriptors = new Map(
+      fields.map((field) => [
+        field,
+        Object.getOwnPropertyDescriptor(Object.prototype, field),
+      ]),
+    );
+    let context: AccessContext | undefined;
+
+    try {
+      Object.defineProperties(Object.prototype, {
+        defaults: {
+          configurable: true,
+          value: ["account.read.own"],
+        },
+        roles: {
+          configurable: true,
+          value: ["support"],
+        },
+        entitlements: {
+          configurable: true,
+          value: ["plan.pro"],
+        },
+      });
+
+      context = resolveAccess(
+        { principalId: "principal-object-prototype" },
+        { version: "object-prototype-1" },
+      );
+    } finally {
+      for (const field of fields) {
+        const descriptor = originalDescriptors.get(field);
+        if (descriptor === undefined) {
+          Reflect.deleteProperty(Object.prototype, field);
+        } else {
+          Object.defineProperty(Object.prototype, field, descriptor);
+        }
+      }
+    }
+
+    expect(context).toEqual({
+      principalId: "principal-object-prototype",
+      policyVersion: "object-prototype-1",
+      roles: [],
+      entitlements: [],
+      permissions: [],
+    });
+  });
+
+  it("rejects own accessor-backed resolver fields without invoking them", () => {
+    const cases = [
+      {
+        label: "roles",
+        run(read: () => void) {
+          const subject = { principalId: "principal-accessor-roles" };
+          Object.defineProperty(subject, "roles", { get: read });
+          resolveAccess(subject as AccessSubject, policy);
+        },
+      },
+      {
+        label: "entitlements",
+        run(read: () => void) {
+          const subject = { principalId: "principal-accessor-entitlements" };
+          Object.defineProperty(subject, "entitlements", { get: read });
+          resolveAccess(subject as AccessSubject, policy);
+        },
+      },
+      {
+        label: "policy.defaults",
+        run(read: () => void) {
+          const accessorPolicy = { version: "accessor-defaults-1" };
+          Object.defineProperty(accessorPolicy, "defaults", { get: read });
+          resolveAccess(
+            { principalId: "principal-accessor-defaults" },
+            accessorPolicy,
+          );
+        },
+      },
+      {
+        label: "policy.roles",
+        run(read: () => void) {
+          const accessorPolicy = { version: "accessor-roles-1" };
+          Object.defineProperty(accessorPolicy, "roles", { get: read });
+          resolveAccess(
+            { principalId: "principal-accessor-policy-roles" },
+            accessorPolicy,
+          );
+        },
+      },
+      {
+        label: "policy.entitlements",
+        run(read: () => void) {
+          const accessorPolicy = { version: "accessor-entitlements-1" };
+          Object.defineProperty(accessorPolicy, "entitlements", { get: read });
+          resolveAccess(
+            { principalId: "principal-accessor-policy-entitlements" },
+            accessorPolicy,
+          );
+        },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      let accessorRead = false;
+      expect(() =>
+        testCase.run(() => {
+          accessorRead = true;
+        }),
+      ).toThrowError(`${testCase.label} must be an own data property`);
+      expect(accessorRead).toBe(false);
+    }
+  });
+
+  it("rejects accessor-backed assignment entries without invoking them", () => {
+    let roleGetterRead = false;
+    const roles = {} as Record<string, readonly string[]>;
+    Object.defineProperty(roles, "support", {
+      get() {
+        roleGetterRead = true;
+        return ["support.queue.read"];
+      },
+    });
+
+    expect(() =>
+      resolveAccess(
+        { principalId: "principal-assignment-accessor", roles: ["support"] },
+        { version: "assignment-accessor-1", roles },
+      ),
+    ).toThrowError("policy.roles.support must be an own data property");
+    expect(roleGetterRead).toBe(false);
   });
 
   it("rejects empty identifiers and permission names", () => {

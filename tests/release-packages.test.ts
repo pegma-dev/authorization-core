@@ -471,7 +471,21 @@ describe("release source authentication", () => {
     expect(publish).not.toContain("pnpm");
     expect(publish).not.toContain("release:pack");
     expect(publish).toContain("npm install --global npm@11.18.0");
-    expect(publish).toContain("npm run release:publish");
+    expect(publish).not.toContain("npm run");
+    expect(publish).toContain("ref: ${{ github.sha }}");
+    expect(publish).toContain("persist-credentials: false");
+    expect(publish).toContain(
+      'git fetch --force --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"',
+    );
+    expect(publish).toContain(
+      'git rev-parse "refs/tags/${RELEASE_TAG}^{commit}"',
+    );
+    expect(publish).toContain(
+      'if [[ "${tag_commit}" != "${RELEASE_COMMIT}" ]]',
+    );
+    expect(publish).toContain(
+      'node scripts/release-packages.mjs publish --expected-release-commit "${RELEASE_COMMIT}"',
+    );
     expect(workflow).not.toContain("identity-bootstrap");
     expect(workflow).not.toContain("github.run_attempt");
     expect(workflow).toContain("retention-days: 30");
